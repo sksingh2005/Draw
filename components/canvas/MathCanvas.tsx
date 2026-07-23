@@ -77,8 +77,9 @@ export function MathCanvas({
   
   // Real-time animation frame ref
   const animFrameIdRef = useRef<number | null>(null);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Sync pan & zoom in refs for 60 FPS zero-lag rendering
+  // Sync pan & zoom in refs for zero-lag 60 FPS rendering
   const panRef = useRef({ x: panX, y: panY });
   const zoomRef = useRef(zoom);
 
@@ -135,7 +136,7 @@ export function MathCanvas({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
-    // Apply Viewport Pan & Zoom Transform
+    // Apply Viewport Pan & Zoom Transform directly from refs
     ctx.translate(panRef.current.x, panRef.current.y);
     ctx.scale(zoomRef.current, zoomRef.current);
 
@@ -246,7 +247,7 @@ export function MathCanvas({
     return () => clearInterval(interval);
   }, [laserPoints]);
 
-  // ResizeObserver for zero-distortion container resizing
+  // ResizeObserver for container resizing
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
@@ -267,14 +268,17 @@ export function MathCanvas({
     return () => observer.disconnect();
   }, [requestRender]);
 
-  // Mouse Wheel Cursor-Centered Zooming Listener
+  // Smooth 60 FPS Mouse Wheel Zooming Listener (Debounced React State Sync)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
+
+      // Smooth exponential zoom scaling
+      const delta = -e.deltaY;
+      const zoomFactor = Math.exp(delta * 0.0015);
       const currentZoom = zoomRef.current;
       const nextZoom = Math.min(Math.max(0.2, currentZoom * zoomFactor), 4);
 
@@ -282,16 +286,22 @@ export function MathCanvas({
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      // Calculate new pan so point under cursor stays stationary
+      // Keep point under cursor stationary
       const newPanX = mouseX - (mouseX - panRef.current.x) * (nextZoom / currentZoom);
       const newPanY = mouseY - (mouseY - panRef.current.y) * (nextZoom / currentZoom);
 
       panRef.current = { x: newPanX, y: newPanY };
       zoomRef.current = nextZoom;
 
-      onPanChange(newPanX, newPanY);
-      if (onZoomChange) onZoomChange(nextZoom);
+      // Immediate 60 FPS Canvas Render
       requestRender();
+
+      // Debounce React state updates to avoid forcing 120 React re-renders per second
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = setTimeout(() => {
+        onPanChange(panRef.current.x, panRef.current.y);
+        if (onZoomChange) onZoomChange(zoomRef.current);
+      }, 100);
     };
 
     canvas.addEventListener("wheel", handleWheel, { passive: false });
@@ -378,14 +388,12 @@ export function MathCanvas({
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (isPanning && dragStartRef.current) {
-      // 1:1 Mouse Delta formula
       const dx = e.clientX - dragStartRef.current.screenX;
       const dy = e.clientY - dragStartRef.current.screenY;
       const newPanX = dragStartRef.current.initialPanX + dx;
       const newPanY = dragStartRef.current.initialPanY + dy;
 
       panRef.current = { x: newPanX, y: newPanY };
-      onPanChange(newPanX, newPanY);
       requestRender();
       return;
     }
@@ -427,6 +435,7 @@ export function MathCanvas({
     if (isPanning) {
       setIsPanning(false);
       dragStartRef.current = null;
+      onPanChange(panRef.current.x, panRef.current.y);
       return;
     }
 
@@ -502,7 +511,6 @@ export function MathCanvas({
     tempCtx.fillStyle = "#ffffff";
     tempCtx.fillRect(0, 0, coords.width, coords.height);
 
-    // Render strokes inside crop
     strokes.forEach((stroke) => {
       if (stroke.points.length === 0) return;
       tempCtx.save();
@@ -527,7 +535,6 @@ export function MathCanvas({
     return { imageBase64, coordinates: coords };
   }, [selectionBox, strokes]);
 
-  // Expose API methods via ref
   if (refCanvasApi) {
     refCanvasApi.current = {
       getCroppedRegion,
