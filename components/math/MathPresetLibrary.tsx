@@ -1,0 +1,195 @@
+"use client";
+
+import React, { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { KatexRenderer } from "./KatexRenderer";
+import { Sparkles, Calculator, Compass, Atom, FunctionSquare } from "lucide-react";
+
+export interface MathTemplate {
+  id: string;
+  name: string;
+  category: "algebra" | "calculus" | "geometry" | "physics";
+  latex: string;
+  description: string;
+}
+
+const PRESET_TEMPLATES: MathTemplate[] = [
+  // Algebra
+  {
+    id: "quad-formula",
+    name: "Quadratic Formula",
+    category: "algebra",
+    latex: "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
+    description: "Finds real and complex roots for quadratic equation ax² + bx + c = 0."
+  },
+  {
+    id: "poly-factor",
+    name: "Difference of Squares",
+    category: "algebra",
+    latex: "a^2 - b^2 = (a - b)(a + b)",
+    description: "Algebraic identity for factoring square differences."
+  },
+  {
+    id: "log-change",
+    name: "Change of Base Formula",
+    category: "algebra",
+    latex: "\\log_b(x) = \\frac{\\log_a(x)}{\\log_a(b)}",
+    description: "Evaluates logarithms in arbitrary bases."
+  },
+
+  // Calculus
+  {
+    id: "derivative-power",
+    name: "Power Rule Derivative",
+    category: "calculus",
+    latex: "\\frac{d}{dx}[x^n] = n x^{n-1}",
+    description: "Fundamental rule for differentiating power functions."
+  },
+  {
+    id: "integral-parts",
+    name: "Integration by Parts",
+    category: "calculus",
+    latex: "\\int u \\, dv = uv - \\int v \\, du",
+    description: "Calculus integration technique for product functions."
+  },
+  {
+    id: "euler-identity",
+    name: "Euler's Identity",
+    category: "calculus",
+    latex: "e^{i\\pi} + 1 = 0",
+    description: "Connects five fundamental mathematical constants."
+  },
+
+  // Geometry & Trig
+  {
+    id: "pythagorean-theorem",
+    name: "Pythagorean Theorem",
+    category: "geometry",
+    latex: "a^2 + b^2 = c^2",
+    description: "Relates hypotenuse c to leg lengths a and b in right triangles."
+  },
+  {
+    id: "trig-pythagoras",
+    name: "Trigonometric Pythagorean Identity",
+    category: "geometry",
+    latex: "\\sin^2(\\theta) + \\cos^2(\\theta) = 1",
+    description: "Fundamental trigonometric identity."
+  },
+
+  // Physics
+  {
+    id: "einstein-energy",
+    name: "Mass-Energy Equivalence",
+    category: "physics",
+    latex: "E = m c^2",
+    description: "Einstein's relation between mass and rest energy."
+  },
+  {
+    id: "kinematic-motion",
+    name: "Kinematic Position Equation",
+    category: "physics",
+    latex: "x(t) = x_0 + v_0 t + \\frac{1}{2} a t^2",
+    description: "Describes displacement under constant acceleration."
+  },
+  {
+    id: "newton-second",
+    name: "Newton's Second Law",
+    category: "physics",
+    latex: "F_{\\text{net}} = m a",
+    description: "Net force equals mass times acceleration."
+  }
+];
+
+interface MathPresetLibraryProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelectTemplate: (template: MathTemplate) => void;
+}
+
+export function MathPresetLibrary({
+  open,
+  onOpenChange,
+  onSelectTemplate,
+}: MathPresetLibraryProps) {
+  const [selectedTab, setSelectedTab] = useState<string>("all");
+
+  const filteredTemplates = PRESET_TEMPLATES.filter(
+    (t) => selectedTab === "all" || t.category === selectedTab
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+            <Sparkles className="w-5 h-5 text-indigo-500" />
+            Math & Science Formula Library
+          </DialogTitle>
+          <DialogDescription>
+            Select a formula to insert directly onto your whiteboard canvas for step-by-step resolution.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Tabs defaultValue="all" value={selectedTab} onValueChange={setSelectedTab} className="flex-1 flex flex-col min-h-0">
+          <TabsList className="grid grid-cols-5 w-full bg-muted/60 p-1">
+            <TabsTrigger value="all" className="text-xs">
+              All
+            </TabsTrigger>
+            <TabsTrigger value="algebra" className="text-xs flex items-center gap-1">
+              <Calculator className="w-3.5 h-3.5" /> Algebra
+            </TabsTrigger>
+            <TabsTrigger value="calculus" className="text-xs flex items-center gap-1">
+              <FunctionSquare className="w-3.5 h-3.5" /> Calculus
+            </TabsTrigger>
+            <TabsTrigger value="geometry" className="text-xs flex items-center gap-1">
+              <Compass className="w-3.5 h-3.5" /> Geometry
+            </TabsTrigger>
+            <TabsTrigger value="physics" className="text-xs flex items-center gap-1">
+              <Atom className="w-3.5 h-3.5" /> Physics
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="flex-1 overflow-y-auto mt-4 pr-1 space-y-3">
+            {filteredTemplates.map((template) => (
+              <div
+                key={template.id}
+                onClick={() => {
+                  onSelectTemplate(template);
+                  onOpenChange(false);
+                }}
+                className="group border rounded-xl p-4 transition-all duration-200 hover:border-primary hover:shadow-md cursor-pointer bg-card hover:bg-accent/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-sm group-hover:text-primary transition-colors">
+                      {template.name}
+                    </h4>
+                    <Badge variant="outline" className="capitalize text-[10px] py-0 px-2">
+                      {template.category}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {template.description}
+                  </p>
+                </div>
+
+                <div className="bg-muted/80 dark:bg-zinc-900 px-3 py-2 rounded-lg border text-center self-start sm:self-center min-w-[180px]">
+                  <KatexRenderer math={template.latex} block={false} className="text-sm font-semibold" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}

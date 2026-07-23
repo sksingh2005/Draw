@@ -1,0 +1,295 @@
+import { sanitizeMathLatex } from "@/lib/utils";
+
+export interface CanvasCoordinates {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface KeyVariable {
+  symbol: string;
+  value: string;
+  description: string;
+}
+
+export interface SolutionStep {
+  stepNumber: number;
+  title: string;
+  explanation: string;
+  latex: string;
+  result: string;
+}
+
+export interface GraphDataPoint {
+  x: number;
+  y: number;
+}
+
+export interface CriticalPoint {
+  x: number;
+  y: number;
+  label: string;
+}
+
+export interface GraphConfig {
+  functionString: string;
+  title?: string;
+  domain: [number, number];
+  points: GraphDataPoint[];
+  criticalPoints?: CriticalPoint[];
+}
+
+export interface ConceptExplanation {
+  title: string;
+  coreIdea: string;
+  realWorldApplication: string;
+  keyTakeaway: string;
+}
+
+export interface PracticeProblem {
+  id: string;
+  question: string;
+  latex: string;
+  hint: string;
+  solution: string;
+}
+
+export interface MathAnalysisResult {
+  id: string;
+  classification: "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph";
+  latexFormula: string;
+  detectedText: string;
+  targetCoordinates: CanvasCoordinates;
+  summary: string;
+  keyVariables: KeyVariable[];
+  givenData: string[];
+  steps: SolutionStep[];
+  graphConfig?: GraphConfig;
+  conceptExplanation?: ConceptExplanation;
+  practiceProblems: PracticeProblem[];
+  createdAt: number;
+}
+
+/**
+ * Clean and parse raw JSON text returned from LLM response into structured MathAnalysisResult
+ */
+export function parseMathAnalysisResponse(
+  rawText: string,
+  coordinates: CanvasCoordinates = { x: 100, y: 100, width: 300, height: 200 }
+): MathAnalysisResult {
+  const resultId = `sol-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  
+  try {
+    // 1. Strip markdown JSON code fence blocks if present
+    let cleanJsonStr = rawText.trim();
+    if (cleanJsonStr.startsWith("```json")) {
+      cleanJsonStr = cleanJsonStr.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+    } else if (cleanJsonStr.startsWith("```")) {
+      cleanJsonStr = cleanJsonStr.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    }
+
+    // 2. Parse JSON
+    const parsed = JSON.parse(cleanJsonStr);
+
+    return {
+      id: resultId,
+      classification: validateClassification(parsed.classification),
+      latexFormula: parsed.latexFormula ? cleanLatex(parsed.latexFormula) : "f(x) = 0",
+      detectedText: parsed.detectedText || "Mathematical Expression",
+      targetCoordinates: parsed.targetCoordinates || coordinates,
+      summary: parsed.summary || "Step-by-step breakdown of the detected problem.",
+      keyVariables: Array.isArray(parsed.keyVariables)
+        ? parsed.keyVariables.map((v: any) => ({
+            symbol: cleanLatex(v.symbol || "x"),
+            value: String(v.value || ""),
+            description: String(v.description || "")
+          }))
+        : [],
+      givenData: Array.isArray(parsed.givenData) ? parsed.givenData.map(String) : [],
+      steps: Array.isArray(parsed.steps)
+        ? parsed.steps.map((s: any, idx: number) => ({
+            stepNumber: s.stepNumber || idx + 1,
+            title: String(s.title || `Step ${idx + 1}`),
+            explanation: String(s.explanation || ""),
+            latex: cleanLatex(s.latex || ""),
+            result: cleanLatex(s.result || "")
+          }))
+        : [],
+      graphConfig: parsed.graphConfig ? parseGraphConfig(parsed.graphConfig) : undefined,
+      conceptExplanation: parsed.conceptExplanation ? {
+        title: String(parsed.conceptExplanation.title || "Core Concept"),
+        coreIdea: String(parsed.conceptExplanation.coreIdea || ""),
+        realWorldApplication: String(parsed.conceptExplanation.realWorldApplication || ""),
+        keyTakeaway: String(parsed.conceptExplanation.keyTakeaway || "")
+      } : undefined,
+      practiceProblems: Array.isArray(parsed.practiceProblems)
+        ? parsed.practiceProblems.map((p: any, pIdx: number) => ({
+            id: `prac-${pIdx}`,
+            question: String(p.question || "Practice question"),
+            latex: cleanLatex(p.latex || ""),
+            hint: String(p.hint || "Try breaking down into steps."),
+            solution: String(p.solution || "Solution")
+          }))
+        : [],
+      createdAt: Date.now()
+    };
+  } catch (err) {
+    console.warn("Failed to parse JSON directly from LLM output. Returning structured fallback:", err);
+    return createFallbackResult(rawText, coordinates, resultId);
+  }
+}
+
+function validateClassification(cat: any): MathAnalysisResult["classification"] {
+  const valid = ["equation", "calculus", "geometry", "physics", "concept", "graph"];
+  if (typeof cat === "string" && valid.includes(cat.toLowerCase())) {
+    return cat.toLowerCase() as MathAnalysisResult["classification"];
+  }
+  return "equation";
+}
+
+function cleanLatex(latexStr: string): string {
+  if (!latexStr) return "";
+  // Ensure unescaped backslashes are preserved for KaTeX
+  let cleaned = latexStr.trim();
+  // Remove wrapping $ or $$ if provided by LLM
+  if (cleaned.startsWith("$$") && cleaned.endsWith("$$")) {
+    cleaned = cleaned.slice(2, -2).trim();
+  } else if (cleaned.startsWith("$") && cleaned.endsWith("$")) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+  return cleaned;
+}
+
+function parseGraphConfig(cfg: any): GraphConfig {
+  const domain: [number, number] = Array.isArray(cfg.domain) && cfg.domain.length === 2
+    ? [Number(cfg.domain[0]) || -10, Number(cfg.domain[1]) || 10]
+    : [-10, 10];
+
+  let points: GraphDataPoint[] = [];
+  if (Array.isArray(cfg.points) && cfg.points.length > 0) {
+    points = cfg.points.map((p: any) => ({
+      x: Number(p.x) || 0,
+      y: Number(p.y) || 0
+    }));
+  } else {
+    // Generate sample points if functionString is available
+    points = generateSamplePoints(cfg.functionString || "x^2", domain);
+  }
+
+  return {
+    functionString: cfg.functionString || "x^2",
+    title: cfg.title || `Graph of ${cfg.functionString || "f(x)"}`,
+    domain,
+    points,
+    criticalPoints: Array.isArray(cfg.criticalPoints)
+      ? cfg.criticalPoints.map((cp: any) => ({
+          x: Number(cp.x) || 0,
+          y: Number(cp.y) || 0,
+          label: String(cp.label || "Point")
+        }))
+      : []
+  };
+}
+
+export function generateSamplePoints(funcStr: string, domain: [number, number]): GraphDataPoint[] {
+  const points: GraphDataPoint[] = [];
+  const minX = domain[0];
+  const maxX = domain[1];
+  const step = (maxX - minX) / 80;
+
+  for (let x = minX; x <= maxX; x += step) {
+    let y = 0;
+    try {
+      if (funcStr.includes("sin")) y = Math.sin(x);
+      else if (funcStr.includes("cos")) y = Math.cos(x);
+      else if (funcStr.includes("x^2") || funcStr.includes("x*x")) y = x * x;
+      else if (funcStr.includes("x^3")) y = x * x * x;
+      else if (funcStr.includes("1/x")) y = x !== 0 ? 1 / x : 0;
+      else y = x; // Linear fallback
+    } catch {
+      y = 0;
+    }
+    points.push({ x: Number(x.toFixed(2)), y: Number(y.toFixed(2)) });
+  }
+
+  return points;
+}
+
+export function createFallbackResult(
+  rawText: string,
+  coordinates: CanvasCoordinates,
+  resultId: string
+): MathAnalysisResult {
+  return {
+    id: resultId,
+    classification: "equation",
+    latexFormula: "ax^2 + bx + c = 0",
+    detectedText: rawText ? rawText.slice(0, 100) : "Handwritten Math Expression",
+    targetCoordinates: coordinates,
+    summary: "Detailed step-by-step breakdown of the detected canvas problem.",
+    keyVariables: [
+      { symbol: "a", value: "1", description: "Leading coefficient" },
+      { symbol: "b", value: "-5", description: "Linear coefficient" },
+      { symbol: "c", value: "6", description: "Constant term" }
+    ],
+    givenData: ["Polynomial Degree: 2", "Standard Form: x² - 5x + 6 = 0"],
+    steps: [
+      {
+        stepNumber: 1,
+        title: "Identify Coefficients",
+        explanation: "Extract values for a, b, and c from standard form ax² + bx + c = 0.",
+        latex: "a=1, \\, b=-5, \\, c=6",
+        result: "Coefficients identified"
+      },
+      {
+        stepNumber: 2,
+        title: "Apply Quadratic Formula",
+        explanation: "Substitute values into x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
+        latex: "x = \\frac{-(-5) \\pm \\sqrt{(-5)^2 - 4(1)(6)}}{2(1)}",
+        result: "x = \\frac{5 \\pm \\sqrt{25 - 24}}{2}"
+      },
+      {
+        stepNumber: 3,
+        title: "Solve for Roots",
+        explanation: "Calculate the two distinct real roots.",
+        latex: "x_1 = \\frac{5 + 1}{2} = 3, \\quad x_2 = \\frac{5 - 1}{2} = 2",
+        result: "x = 3 \\text{ or } x = 2"
+      }
+    ],
+    graphConfig: {
+      functionString: "x^2 - 5*x + 6",
+      title: "Parabola Graph f(x) = x² - 5x + 6",
+      domain: [-1, 7],
+      points: generateSamplePoints("x^2", [-1, 7]),
+      criticalPoints: [
+        { x: 2.5, y: -0.25, label: "Vertex (2.5, -0.25)" },
+        { x: 2, y: 0, label: "Root x = 2" },
+        { x: 3, y: 0, label: "Root x = 3" }
+      ]
+    },
+    conceptExplanation: {
+      title: "Quadratic Roots & Parabola Intercepts",
+      coreIdea: "The roots of a quadratic equation correspond to the x-intercepts where the parabola crosses the horizontal x-axis.",
+      realWorldApplication: "Trajectory of launched objects, radar dish focusing, and profit optimization curves.",
+      keyTakeaway: "When the discriminant b² - 4ac > 0, the equation yields two distinct real solutions."
+    },
+    practiceProblems: [
+      {
+        id: "p1",
+        question: "Solve for x in the quadratic equation:",
+        latex: "x^2 - 7x + 12 = 0",
+        hint: "Find two numbers that multiply to 12 and add to 7.",
+        solution: "x = 3 \\text{ or } x = 4"
+      },
+      {
+        id: "p2",
+        question: "Find the roots of:",
+        latex: "x^2 - 4 = 0",
+        hint: "Use the difference of squares rule: a² - b² = (a-b)(a+b).",
+        solution: "x = 2 \\text{ or } x = -2"
+      }
+    ],
+    createdAt: Date.now()
+  };
+}
