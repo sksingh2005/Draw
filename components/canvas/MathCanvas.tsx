@@ -35,6 +35,7 @@ interface MathCanvasProps {
   panX: number;
   panY: number;
   onPanChange: (panX: number, panY: number) => void;
+  onZoomChange?: (zoom: number) => void;
   onStrokesChange?: (count: number) => void;
   onSelectionChange?: (coords: CanvasCoordinates | null) => void;
   noteNodes: CanvasNoteNode[];
@@ -62,6 +63,7 @@ export function MathCanvas({
   panX,
   panY,
   onPanChange,
+  onZoomChange,
   onStrokesChange,
   onSelectionChange,
   noteNodes,
@@ -70,12 +72,32 @@ export function MathCanvas({
   strokes,
   setStrokes,
 }: MathCanvasProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  
+  // Real-time animation frame ref
+  const animFrameIdRef = useRef<number | null>(null);
+
+  // Sync pan & zoom in refs for 60 FPS zero-lag rendering
+  const panRef = useRef({ x: panX, y: panY });
+  const zoomRef = useRef(zoom);
+
+  useEffect(() => {
+    panRef.current = { x: panX, y: panY };
+  }, [panX, panY]);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
   const [undoStack, setUndoStack] = useState<CanvasStroke[][]>([]);
   const [redoStack, setRedoStack] = useState<CanvasStroke[][]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<StrokePoint | null>(null);
+  
+  // 1:1 Hand Pan Tracking Refs
+  const dragStartRef = useRef<{ screenX: number; screenY: number; initialPanX: number; initialPanY: number } | null>(null);
+
   const [currentStroke, setCurrentStroke] = useState<CanvasStroke | null>(null);
 
   // Selection Bounding Box state
@@ -89,26 +111,8 @@ export function MathCanvas({
   const [textInputPos, setTextInputPos] = useState<StrokePoint | null>(null);
   const [textInputValue, setTextInputValue] = useState("");
 
-  // Resize canvas dynamically
-  const updateCanvasDimensions = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const parent = canvas.parentElement;
-    if (!parent) return;
-
-    canvas.width = parent.clientWidth;
-    canvas.height = parent.clientHeight;
-    redrawCanvas();
-  }, [strokes, zoom, panX, panY]);
-
-  useEffect(() => {
-    updateCanvasDimensions();
-    window.addEventListener("resize", updateCanvasDimensions);
-    return () => window.removeEventListener("resize", updateCanvasDimensions);
-  }, [updateCanvasDimensions]);
-
-  // Convert raw screen pixel coordinates into world canvas coordinates (factoring zoom & pan)
-  const getCanvasWorldCoords = (clientX: number, clientY: number): StrokePoint => {
+  // Convert raw screen pixel coordinates into world canvas coordinates
+  const getCanvasWorldCoords = useCallback((clientX: number, clientY: number): StrokePoint => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
@@ -116,12 +120,12 @@ export function MathCanvas({
     const screenY = clientY - rect.top;
 
     return {
-      x: (screenX - panX) / zoom,
-      y: (screenY - panY) / zoom,
+      x: (screenX - panRef.current.x) / zoomRef.current,
+      y: (screenY - panRef.current.y) / zoomRef.current,
     };
-  };
+  }, []);
 
-  // Redraw all strokes & shapes onto HTML5 Canvas factoring Viewport Transform (Pan & Zoom)
+  // Redraw canvas using requestAnimationFrame at 60 FPS
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -132,8 +136,8 @@ export function MathCanvas({
 
     ctx.save();
     // Apply Viewport Pan & Zoom Transform
-    ctx.translate(panX, panY);
-    ctx.scale(zoom, zoom);
+    ctx.translate(panRef.current.x, panRef.current.y);
+    ctx.scale(zoomRef.current, zoomRef.current);
 
     const allStrokes = [...strokes, ...(currentStroke ? [currentStroke] : [])];
 
@@ -221,11 +225,16 @@ export function MathCanvas({
     }
 
     ctx.restore();
-  }, [strokes, currentStroke, laserPoints, panX, panY, zoom]);
+  }, [strokes, currentStroke, laserPoints]);
+
+  const requestRender = useCallback(() => {
+    if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+    animFrameIdRef.current = requestAnimationFrame(redrawCanvas);
+  }, [redrawCanvas]);
 
   useEffect(() => {
-    redrawCanvas();
-  }, [redrawCanvas]);
+    requestRender();
+  }, [requestRender]);
 
   // Clean laser trail loop
   useEffect(() => {
@@ -236,6 +245,58 @@ export function MathCanvas({
     }, 50);
     return () => clearInterval(interval);
   }, [laserPoints]);
+
+  // ResizeObserver for zero-distortion container resizing
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+          requestRender();
+        }
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [requestRender]);
+
+  // Mouse Wheel Cursor-Centered Zooming Listener
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
+      const currentZoom = zoomRef.current;
+      const nextZoom = Math.min(Math.max(0.2, currentZoom * zoomFactor), 4);
+
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      // Calculate new pan so point under cursor stays stationary
+      const newPanX = mouseX - (mouseX - panRef.current.x) * (nextZoom / currentZoom);
+      const newPanY = mouseY - (mouseY - panRef.current.y) * (nextZoom / currentZoom);
+
+      panRef.current = { x: newPanX, y: newPanY };
+      zoomRef.current = nextZoom;
+
+      onPanChange(newPanX, newPanY);
+      if (onZoomChange) onZoomChange(nextZoom);
+      requestRender();
+    };
+
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleWheel);
+  }, [onPanChange, onZoomChange, requestRender]);
 
   // Arrow helper
   const drawArrow = (
@@ -274,7 +335,12 @@ export function MathCanvas({
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (toolMode === "pan" || e.button === 1) {
       setIsPanning(true);
-      setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
+      dragStartRef.current = {
+        screenX: e.clientX,
+        screenY: e.clientY,
+        initialPanX: panRef.current.x,
+        initialPanY: panRef.current.y,
+      };
       return;
     }
 
@@ -311,8 +377,16 @@ export function MathCanvas({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (isPanning && panStart) {
-      onPanChange(e.clientX - panStart.x, e.clientY - panStart.y);
+    if (isPanning && dragStartRef.current) {
+      // 1:1 Mouse Delta formula
+      const dx = e.clientX - dragStartRef.current.screenX;
+      const dy = e.clientY - dragStartRef.current.screenY;
+      const newPanX = dragStartRef.current.initialPanX + dx;
+      const newPanY = dragStartRef.current.initialPanY + dy;
+
+      panRef.current = { x: newPanX, y: newPanY };
+      onPanChange(newPanX, newPanY);
+      requestRender();
       return;
     }
 
@@ -345,13 +419,14 @@ export function MathCanvas({
             }
           : null
       );
+      requestRender();
     }
   };
 
   const handlePointerUp = () => {
     if (isPanning) {
       setIsPanning(false);
-      setPanStart(null);
+      dragStartRef.current = null;
       return;
     }
 
@@ -409,12 +484,12 @@ export function MathCanvas({
     let coords: CanvasCoordinates = selectionBox || {
       x: 0,
       y: 0,
-      width: canvas.width / zoom,
-      height: canvas.height / zoom,
+      width: canvas.width / zoomRef.current,
+      height: canvas.height / zoomRef.current,
     };
 
     if (coords.width < 10 || coords.height < 10) {
-      coords = { x: 0, y: 0, width: canvas.width / zoom, height: canvas.height / zoom };
+      coords = { x: 0, y: 0, width: canvas.width / zoomRef.current, height: canvas.height / zoomRef.current };
     }
 
     const tempCanvas = document.createElement("canvas");
@@ -450,7 +525,7 @@ export function MathCanvas({
 
     const imageBase64 = tempCanvas.toDataURL("image/png");
     return { imageBase64, coordinates: coords };
-  }, [selectionBox, strokes, zoom]);
+  }, [selectionBox, strokes]);
 
   // Expose API methods via ref
   if (refCanvasApi) {
@@ -492,6 +567,7 @@ export function MathCanvas({
 
   return (
     <div
+      ref={containerRef}
       className={`relative w-full h-full overflow-hidden select-none touch-none ${getCursorClass()} ${
         gridMode === "graph"
           ? "canvas-grid-graph"
@@ -514,10 +590,10 @@ export function MathCanvas({
         <div
           className="absolute z-20 border-2 border-dashed border-indigo-500 bg-indigo-500/10 pointer-events-none rounded-md shadow-lg"
           style={{
-            left: `${selectionBox.x * zoom + panX}px`,
-            top: `${selectionBox.y * zoom + panY}px`,
-            width: `${selectionBox.width * zoom}px`,
-            height: `${selectionBox.height * zoom}px`,
+            left: `${selectionBox.x * zoomRef.current + panRef.current.x}px`,
+            top: `${selectionBox.y * zoomRef.current + panRef.current.y}px`,
+            width: `${selectionBox.width * zoomRef.current}px`,
+            height: `${selectionBox.height * zoomRef.current}px`,
           }}
         >
           <div className="absolute -top-6 left-0 bg-indigo-600 text-white text-[10px] font-mono px-2 py-0.5 rounded shadow-sm">
@@ -532,8 +608,8 @@ export function MathCanvas({
           key={node.id}
           className="absolute z-20 bg-card/90 backdrop-blur border shadow-md px-3 py-2 rounded-xl text-sm font-medium border-indigo-500/30"
           style={{
-            left: `${node.x * zoom + panX}px`,
-            top: `${node.y * zoom + panY}px`,
+            left: `${node.x * zoomRef.current + panRef.current.x}px`,
+            top: `${node.y * zoomRef.current + panRef.current.y}px`,
           }}
         >
           <KatexRenderer math={node.latex || node.text} block={false} />
@@ -546,8 +622,8 @@ export function MathCanvas({
           onSubmit={handleAddTextSubmit}
           className="absolute z-30 bg-background border shadow-2xl rounded-xl p-2 flex gap-2 w-72"
           style={{
-            left: `${textInputPos.x * zoom + panX}px`,
-            top: `${textInputPos.y * zoom + panY}px`,
+            left: `${textInputPos.x * zoomRef.current + panRef.current.x}px`,
+            top: `${textInputPos.y * zoomRef.current + panRef.current.y}px`,
           }}
         >
           <input
