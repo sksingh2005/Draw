@@ -32,6 +32,7 @@ export default function Home() {
   // Layout UI Toggles
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(true);
+  const [isCanvasMaximized, setIsCanvasMaximized] = useState<boolean>(false);
 
   // Canvas tool states
   const [toolMode, setToolMode] = useState<CanvasToolMode>("pan");
@@ -53,7 +54,7 @@ export default function Home() {
   const [isPanelOpen, setIsPanelOpen] = useState<boolean>(false);
   const [presetLibraryOpen, setPresetLibraryOpen] = useState<boolean>(false);
 
-  // Load initial pages from local storage
+  // Load initial pages
   useEffect(() => {
     const loadedPages = getSavedPages();
     setPages(loadedPages);
@@ -68,7 +69,7 @@ export default function Home() {
     }
   }, []);
 
-  // Save current workspace state on strokes/notes/messages change
+  // Save workspace state
   useEffect(() => {
     if (!activePage) return;
     const updatedPage: WorkspacePage = {
@@ -136,7 +137,6 @@ export default function Home() {
         setCurrentResult(resultData);
         setIsPanelOpen(true);
 
-        // Add to Chat Thread as Assistant Response
         const assistantMsg: ChatMessage = {
           id: `msg-${Date.now()}`,
           sender: "assistant",
@@ -234,6 +234,8 @@ export default function Home() {
       {/* Top Navbar */}
       <Navbar
         activeTitle={activePage?.title || "AI Whiteboard Workspace"}
+        isMaximized={isCanvasMaximized}
+        onToggleMaximize={() => setIsCanvasMaximized((prev) => !prev)}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         onToggleChat={() => setIsChatOpen((prev) => !prev)}
         onOpenPresets={() => setPresetLibraryOpen(true)}
@@ -242,18 +244,20 @@ export default function Home() {
         analysisCount={messages.length}
       />
 
-      {/* Main 3-Pane Responsive Layout */}
+      {/* Main Responsive Layout */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Left Sidebar: Pages & History */}
-        <Sidebar
-          pages={pages}
-          activePageId={activePageId}
-          onSelectPage={handleSelectPage}
-          onCreateNewPage={handleCreateNewPage}
-          onDeletePage={handleDeletePage}
-          isOpen={isSidebarOpen}
-          onToggleOpen={() => setIsSidebarOpen((prev) => !prev)}
-        />
+        {!isCanvasMaximized && (
+          <Sidebar
+            pages={pages}
+            activePageId={activePageId}
+            onSelectPage={handleSelectPage}
+            onCreateNewPage={handleCreateNewPage}
+            onDeletePage={handleDeletePage}
+            isOpen={isSidebarOpen}
+            onToggleOpen={() => setIsSidebarOpen((prev) => !prev)}
+          />
+        )}
 
         {/* Center Infinite Canvas Work Area */}
         <main className="flex-1 relative w-full h-full overflow-hidden flex flex-col">
@@ -270,7 +274,7 @@ export default function Home() {
               setPanX(px);
               setPanY(py);
             }}
-            onStrokesChange={(count) => {}}
+            onZoomChange={setZoom}
             noteNodes={noteNodes}
             onAddNoteNode={(newNode) => setNoteNodes((prev) => [...prev, newNode])}
             strokes={strokes}
@@ -297,8 +301,8 @@ export default function Home() {
             gridMode={gridMode}
             onGridModeChange={setGridMode}
             zoom={zoom}
-            onZoomIn={() => setZoom((prev) => Math.min(prev + 0.15, 3))}
-            onZoomOut={() => setZoom((prev) => Math.max(prev - 0.15, 0.4))}
+            onZoomIn={() => setZoom((prev) => Math.min(prev + 0.15, 4))}
+            onZoomOut={() => setZoom((prev) => Math.max(prev - 0.15, 0.2))}
             onResetZoom={() => {
               setZoom(1);
               setPanX(0);
@@ -330,14 +334,16 @@ export default function Home() {
         </main>
 
         {/* Right LLM Chat & Analysis Panel */}
-        <ChatPanel
-          messages={messages}
-          onSendMessage={handleSendChatMessage}
-          onAttachCanvasCrop={() => canvasRef.current?.getCroppedRegion() || null}
-          isOpen={isChatOpen}
-          onToggleOpen={() => setIsChatOpen((prev) => !prev)}
-          isAnalyzing={isAnalyzing}
-        />
+        {!isCanvasMaximized && (
+          <ChatPanel
+            messages={messages}
+            onSendMessage={handleSendChatMessage}
+            onAttachCanvasCrop={() => canvasRef.current?.getCroppedRegion() || null}
+            isOpen={isChatOpen}
+            onToggleOpen={() => setIsChatOpen((prev) => !prev)}
+            isAnalyzing={isAnalyzing}
+          />
+        )}
       </div>
     </div>
   );

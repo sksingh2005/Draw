@@ -11,10 +11,14 @@ import {
   Cpu,
   PanelLeft,
   MessageSquare,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 
 interface NavbarProps {
   activeTitle?: string;
+  isMaximized: boolean;
+  onToggleMaximize: () => void;
   onToggleSidebar: () => void;
   onToggleChat: () => void;
   onOpenPresets: () => void;
@@ -25,6 +29,8 @@ interface NavbarProps {
 
 export function Navbar({
   activeTitle = "Interactive Workspace",
+  isMaximized,
+  onToggleMaximize,
   onToggleSidebar,
   onToggleChat,
   onOpenPresets,
@@ -36,15 +42,17 @@ export function Navbar({
     <header className="h-14 border-b bg-background/80 backdrop-blur-xl px-4 flex items-center justify-between z-30 sticky top-0">
       {/* Left Brand & Sidebar Toggle */}
       <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleSidebar}
-          className="w-9 h-9 rounded-xl text-muted-foreground hover:text-foreground"
-          title="Toggle Workspace Pages Sidebar"
-        >
-          <PanelLeft className="w-4 h-4" />
-        </Button>
+        {!isMaximized && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidebar}
+            className="w-9 h-9 rounded-xl text-muted-foreground hover:text-foreground"
+            title="Toggle Workspace Pages Sidebar"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </Button>
+        )}
 
         <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
           <Sparkles className="w-4 h-4" />
@@ -71,7 +79,7 @@ export function Navbar({
         </span>
       </div>
 
-      {/* Right Quick Actions & Chat Toggle */}
+      {/* Right Quick Actions */}
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onOpenPresets} className="rounded-xl text-xs gap-1.5 hidden sm:flex">
           <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Formulas
@@ -87,12 +95,24 @@ export function Navbar({
 
         <Button
           variant="outline"
-          size="sm"
-          onClick={onToggleChat}
-          className="rounded-xl text-xs gap-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30"
+          size="icon"
+          onClick={onToggleMaximize}
+          className="w-9 h-9 rounded-xl text-muted-foreground hover:text-foreground"
+          title={isMaximized ? "Minimize Canvas Workspace" : "Maximize Canvas Workspace"}
         >
-          <MessageSquare className="w-3.5 h-3.5" /> AI Chat
+          {isMaximized ? <Minimize2 className="w-4 h-4 text-indigo-500" /> : <Maximize2 className="w-4 h-4" />}
         </Button>
+
+        {!isMaximized && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onToggleChat}
+            className="rounded-xl text-xs gap-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30"
+          >
+            <MessageSquare className="w-3.5 h-3.5" /> AI Chat
+          </Button>
+        )}
       </div>
     </header>
   );
