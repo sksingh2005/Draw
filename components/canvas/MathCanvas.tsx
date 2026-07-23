@@ -31,11 +31,17 @@ interface MathCanvasProps {
   strokeColor: string;
   strokeWidth: number;
   gridMode: GridMode;
+  zoom: number;
+  panX: number;
+  panY: number;
+  onPanChange: (panX: number, panY: number) => void;
   onStrokesChange?: (count: number) => void;
   onSelectionChange?: (coords: CanvasCoordinates | null) => void;
   noteNodes: CanvasNoteNode[];
   onAddNoteNode: (node: CanvasNoteNode) => void;
   refCanvasApi?: React.MutableRefObject<MathCanvasRef | null>;
+  strokes: CanvasStroke[];
+  setStrokes: React.Dispatch<React.SetStateAction<CanvasStroke[]>>;
 }
 
 export interface MathCanvasRef {
@@ -52,17 +58,24 @@ export function MathCanvas({
   strokeColor,
   strokeWidth,
   gridMode,
+  zoom,
+  panX,
+  panY,
+  onPanChange,
   onStrokesChange,
   onSelectionChange,
   noteNodes,
   onAddNoteNode,
   refCanvasApi,
+  strokes,
+  setStrokes,
 }: MathCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [strokes, setStrokes] = useState<CanvasStroke[]>([]);
   const [undoStack, setUndoStack] = useState<CanvasStroke[][]>([]);
   const [redoStack, setRedoStack] = useState<CanvasStroke[][]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<StrokePoint | null>(null);
   const [currentStroke, setCurrentStroke] = useState<CanvasStroke | null>(null);
 
   // Selection Bounding Box state
@@ -76,22 +89,17 @@ export function MathCanvas({
   const [textInputPos, setTextInputPos] = useState<StrokePoint | null>(null);
   const [textInputValue, setTextInputValue] = useState("");
 
-  // Resize canvas dynamically to fit window
+  // Resize canvas dynamically
   const updateCanvasDimensions = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const parent = canvas.parentElement;
     if (!parent) return;
 
-    // Save previous drawn image state before resize
-    const prevWidth = canvas.width;
-    const prevHeight = canvas.height;
-
     canvas.width = parent.clientWidth;
     canvas.height = parent.clientHeight;
-
     redrawCanvas();
-  }, [strokes]);
+  }, [strokes, zoom, panX, panY]);
 
   useEffect(() => {
     updateCanvasDimensions();
@@ -99,7 +107,21 @@ export function MathCanvas({
     return () => window.removeEventListener("resize", updateCanvasDimensions);
   }, [updateCanvasDimensions]);
 
-  // Redraw all strokes & shapes onto HTML5 Canvas
+  // Convert raw screen pixel coordinates into world canvas coordinates (factoring zoom & pan)
+  const getCanvasWorldCoords = (clientX: number, clientY: number): StrokePoint => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const screenX = clientX - rect.left;
+    const screenY = clientY - rect.top;
+
+    return {
+      x: (screenX - panX) / zoom,
+      y: (screenY - panY) / zoom,
+    };
+  };
+
+  // Redraw all strokes & shapes onto HTML5 Canvas factoring Viewport Transform (Pan & Zoom)
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -107,6 +129,11 @@ export function MathCanvas({
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    // Apply Viewport Pan & Zoom Transform
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
 
     const allStrokes = [...strokes, ...(currentStroke ? [currentStroke] : [])];
 
@@ -192,7 +219,9 @@ export function MathCanvas({
       }
       ctx.restore();
     }
-  }, [strokes, currentStroke, laserPoints]);
+
+    ctx.restore();
+  }, [strokes, currentStroke, laserPoints, panX, panY, zoom]);
 
   useEffect(() => {
     redrawCanvas();
@@ -208,7 +237,7 @@ export function MathCanvas({
     return () => clearInterval(interval);
   }, [laserPoints]);
 
-  // Draw Arrow helper
+  // Arrow helper
   const drawArrow = (
     ctx: CanvasRenderingContext2D,
     fromx: number,
@@ -241,22 +270,24 @@ export function MathCanvas({
     ctx.fill();
   };
 
-  // Canvas Mouse & Touch Event Handlers
+  // Pointer Handlers
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    if (toolMode === "pan" || e.button === 1) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
+      return;
+    }
+
+    const world = getCanvasWorldCoords(e.clientX, e.clientY);
 
     if (toolMode === "text") {
-      setTextInputPos({ x, y });
+      setTextInputPos(world);
       return;
     }
 
     if (toolMode === "select") {
-      setSelectionStart({ x, y });
-      setSelectionBox({ x, y, width: 0, height: 0 });
+      setSelectionStart(world);
+      setSelectionBox({ x: world.x, y: world.y, width: 0, height: 0 });
       setIsDrawing(true);
       return;
     }
@@ -264,7 +295,7 @@ export function MathCanvas({
     setIsDrawing(true);
 
     if (toolMode === "laser") {
-      setLaserPoints((prev) => [...prev, { x, y, time: Date.now() }]);
+      setLaserPoints((prev) => [...prev, { x: world.x, y: world.y, time: Date.now() }]);
       return;
     }
 
@@ -273,31 +304,32 @@ export function MathCanvas({
       tool: toolMode,
       color: strokeColor,
       width: strokeWidth,
-      points: [{ x, y }],
+      points: [world],
     };
 
     setCurrentStroke(newStroke);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    if (isPanning && panStart) {
+      onPanChange(e.clientX - panStart.x, e.clientY - panStart.y);
+      return;
+    }
+
+    const world = getCanvasWorldCoords(e.clientX, e.clientY);
 
     if (toolMode === "laser") {
-      setLaserPoints((prev) => [...prev, { x, y, time: Date.now() }]);
+      setLaserPoints((prev) => [...prev, { x: world.x, y: world.y, time: Date.now() }]);
       return;
     }
 
     if (!isDrawing) return;
 
     if (toolMode === "select" && selectionStart) {
-      const minX = Math.min(selectionStart.x, x);
-      const minY = Math.min(selectionStart.y, y);
-      const w = Math.abs(x - selectionStart.x);
-      const h = Math.abs(y - selectionStart.y);
+      const minX = Math.min(selectionStart.x, world.x);
+      const minY = Math.min(selectionStart.y, world.y);
+      const w = Math.abs(world.x - selectionStart.x);
+      const h = Math.abs(world.y - selectionStart.y);
       const coords = { x: minX, y: minY, width: w, height: h };
       setSelectionBox(coords);
       if (onSelectionChange) onSelectionChange(coords);
@@ -309,7 +341,7 @@ export function MathCanvas({
         prev
           ? {
               ...prev,
-              points: [...prev.points, { x, y }],
+              points: [...prev.points, world],
             }
           : null
       );
@@ -317,6 +349,12 @@ export function MathCanvas({
   };
 
   const handlePointerUp = () => {
+    if (isPanning) {
+      setIsPanning(false);
+      setPanStart(null);
+      return;
+    }
+
     if (!isDrawing) return;
     setIsDrawing(false);
 
@@ -343,7 +381,7 @@ export function MathCanvas({
     setUndoStack((prev) => prev.slice(0, -1));
     setStrokes(prevStrokes);
     if (onStrokesChange) onStrokesChange(prevStrokes.length);
-  }, [undoStack, strokes, onStrokesChange]);
+  }, [undoStack, strokes, setStrokes, onStrokesChange]);
 
   const redo = useCallback(() => {
     if (redoStack.length === 0) return;
@@ -352,7 +390,7 @@ export function MathCanvas({
     setRedoStack((prev) => prev.slice(0, -1));
     setStrokes(nextStrokes);
     if (onStrokesChange) onStrokesChange(nextStrokes.length);
-  }, [redoStack, strokes, onStrokesChange]);
+  }, [redoStack, strokes, setStrokes, onStrokesChange]);
 
   const clearCanvas = useCallback(() => {
     setUndoStack((prev) => [...prev, strokes]);
@@ -361,7 +399,7 @@ export function MathCanvas({
     setSelectionBox(null);
     if (onStrokesChange) onStrokesChange(0);
     if (onSelectionChange) onSelectionChange(null);
-  }, [strokes, onStrokesChange, onSelectionChange]);
+  }, [strokes, setStrokes, onStrokesChange, onSelectionChange]);
 
   // Extract Cropped Region Image Base64 data URL
   const getCroppedRegion = useCallback(() => {
@@ -371,13 +409,12 @@ export function MathCanvas({
     let coords: CanvasCoordinates = selectionBox || {
       x: 0,
       y: 0,
-      width: canvas.width,
-      height: canvas.height,
+      width: canvas.width / zoom,
+      height: canvas.height / zoom,
     };
 
-    // Ensure minimum size
     if (coords.width < 10 || coords.height < 10) {
-      coords = { x: 0, y: 0, width: canvas.width, height: canvas.height };
+      coords = { x: 0, y: 0, width: canvas.width / zoom, height: canvas.height / zoom };
     }
 
     const tempCanvas = document.createElement("canvas");
@@ -387,26 +424,33 @@ export function MathCanvas({
 
     if (!tempCtx) return null;
 
-    // Fill white background for high contrast vision OCR
     tempCtx.fillStyle = "#ffffff";
     tempCtx.fillRect(0, 0, coords.width, coords.height);
 
-    // Draw region content
-    tempCtx.drawImage(
-      canvas,
-      coords.x,
-      coords.y,
-      coords.width,
-      coords.height,
-      0,
-      0,
-      coords.width,
-      coords.height
-    );
+    // Render strokes inside crop
+    strokes.forEach((stroke) => {
+      if (stroke.points.length === 0) return;
+      tempCtx.save();
+      tempCtx.strokeStyle = stroke.color;
+      tempCtx.fillStyle = stroke.color;
+      tempCtx.lineWidth = stroke.width;
+      tempCtx.lineCap = "round";
+      tempCtx.lineJoin = "round";
+
+      if (stroke.tool === "pen") {
+        tempCtx.beginPath();
+        tempCtx.moveTo(stroke.points[0].x - coords.x, stroke.points[0].y - coords.y);
+        for (let i = 1; i < stroke.points.length; i++) {
+          tempCtx.lineTo(stroke.points[i].x - coords.x, stroke.points[i].y - coords.y);
+        }
+        tempCtx.stroke();
+      }
+      tempCtx.restore();
+    });
 
     const imageBase64 = tempCanvas.toDataURL("image/png");
     return { imageBase64, coordinates: coords };
-  }, [selectionBox]);
+  }, [selectionBox, strokes, zoom]);
 
   // Expose API methods via ref
   if (refCanvasApi) {
@@ -439,9 +483,16 @@ export function MathCanvas({
     setTextInputPos(null);
   };
 
+  const getCursorClass = () => {
+    if (toolMode === "pan") return isPanning ? "cursor-grabbing" : "cursor-grab";
+    if (toolMode === "select") return "cursor-crosshair";
+    if (toolMode === "eraser") return "cursor-cell";
+    return "cursor-crosshair";
+  };
+
   return (
     <div
-      className={`relative w-full h-full overflow-hidden select-none touch-none ${
+      className={`relative w-full h-full overflow-hidden select-none touch-none ${getCursorClass()} ${
         gridMode === "graph"
           ? "canvas-grid-graph"
           : gridMode === "dots"
@@ -455,7 +506,7 @@ export function MathCanvas({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        className="absolute inset-0 cursor-crosshair z-10 w-full h-full"
+        className="absolute inset-0 z-10 w-full h-full"
       />
 
       {/* Selection Bounding Box Overlay */}
@@ -463,10 +514,10 @@ export function MathCanvas({
         <div
           className="absolute z-20 border-2 border-dashed border-indigo-500 bg-indigo-500/10 pointer-events-none rounded-md shadow-lg"
           style={{
-            left: `${selectionBox.x}px`,
-            top: `${selectionBox.y}px`,
-            width: `${selectionBox.width}px`,
-            height: `${selectionBox.height}px`,
+            left: `${selectionBox.x * zoom + panX}px`,
+            top: `${selectionBox.y * zoom + panY}px`,
+            width: `${selectionBox.width * zoom}px`,
+            height: `${selectionBox.height * zoom}px`,
           }}
         >
           <div className="absolute -top-6 left-0 bg-indigo-600 text-white text-[10px] font-mono px-2 py-0.5 rounded shadow-sm">
@@ -480,7 +531,10 @@ export function MathCanvas({
         <div
           key={node.id}
           className="absolute z-20 bg-card/90 backdrop-blur border shadow-md px-3 py-2 rounded-xl text-sm font-medium border-indigo-500/30"
-          style={{ left: `${node.x}px`, top: `${node.y}px` }}
+          style={{
+            left: `${node.x * zoom + panX}px`,
+            top: `${node.y * zoom + panY}px`,
+          }}
         >
           <KatexRenderer math={node.latex || node.text} block={false} />
         </div>
@@ -491,7 +545,10 @@ export function MathCanvas({
         <form
           onSubmit={handleAddTextSubmit}
           className="absolute z-30 bg-background border shadow-2xl rounded-xl p-2 flex gap-2 w-72"
-          style={{ left: `${textInputPos.x}px`, top: `${textInputPos.y}px` }}
+          style={{
+            left: `${textInputPos.x * zoom + panX}px`,
+            top: `${textInputPos.y * zoom + panY}px`,
+          }}
         >
           <input
             type="text"

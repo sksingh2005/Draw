@@ -1,13 +1,14 @@
 "use client";
 
 import React from "react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
+  Hand,
   Pencil,
   Eraser,
   Crop,
@@ -22,9 +23,13 @@ import {
   Grid,
   Zap,
   BookOpen,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
 } from "lucide-react";
 
 export type CanvasToolMode =
+  | "pan"
   | "pen"
   | "eraser"
   | "select"
@@ -57,6 +62,10 @@ interface CanvasToolbarProps {
   onStrokeWidthChange: (width: number) => void;
   gridMode: GridMode;
   onGridModeChange: (mode: GridMode) => void;
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onResetZoom: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -76,6 +85,10 @@ export function CanvasToolbar({
   onStrokeWidthChange,
   gridMode,
   onGridModeChange,
+  zoom,
+  onZoomIn,
+  onZoomOut,
+  onResetZoom,
   canUndo,
   canRedo,
   onUndo,
@@ -87,9 +100,23 @@ export function CanvasToolbar({
 }: CanvasToolbarProps) {
   return (
     <TooltipProvider>
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 p-2 rounded-2xl border bg-background/80 backdrop-blur-xl shadow-2xl transition-all">
-        {/* Draw Tools */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 p-2 rounded-2xl border bg-background/85 backdrop-blur-xl shadow-2xl transition-all">
+        {/* Navigation Hand & Pen Tools */}
         <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("pan")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "pan" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer",
+                toolMode === "pan" && "bg-indigo-600 text-white"
+              )}
+            >
+              <Hand className="w-4 h-4" />
+            </TooltipTrigger>
+            <TooltipContent>Pan Canvas (Scroll & Move Pointer)</TooltipContent>
+          </Tooltip>
+
           <Tooltip>
             <TooltipTrigger
               onClick={() => onToolModeChange("pen")}
@@ -202,11 +229,11 @@ export function CanvasToolbar({
 
         <Separator orientation="vertical" className="h-6 mx-1" />
 
-        {/* Style Controls (Color & Stroke Width) */}
+        {/* Style Controls & Zoom */}
         <div className="flex items-center gap-1.5">
           {/* Color Picker */}
           <Popover>
-            <PopoverTrigger className="inline-flex items-center justify-center rounded-xl border border-input bg-background p-0 w-9 h-9 hover:bg-accent hover:text-accent-foreground cursor-pointer">
+            <PopoverTrigger className="inline-flex items-center justify-center rounded-xl border border-input bg-background p-0 w-9 h-9 hover:bg-accent cursor-pointer">
               <span
                 className="w-5 h-5 rounded-full border border-black/20 shadow-xs"
                 style={{ backgroundColor: strokeColor }}
@@ -229,9 +256,9 @@ export function CanvasToolbar({
             </PopoverContent>
           </Popover>
 
-          {/* Stroke Width Slider */}
+          {/* Stroke Width */}
           <Popover>
-            <PopoverTrigger className="inline-flex items-center justify-center rounded-xl border border-input bg-background p-0 w-9 h-9 font-bold text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer">
+            <PopoverTrigger className="inline-flex items-center justify-center rounded-xl border border-input bg-background p-0 w-9 h-9 font-bold text-xs hover:bg-accent cursor-pointer">
               {strokeWidth}px
             </PopoverTrigger>
             <PopoverContent className="w-48 p-3" align="center">
@@ -252,9 +279,31 @@ export function CanvasToolbar({
             </PopoverContent>
           </Popover>
 
+          {/* Zoom Controls */}
+          <div className="flex items-center bg-muted/60 rounded-xl p-0.5 border">
+            <button
+              onClick={onZoomOut}
+              className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={onResetZoom}
+              className="px-1.5 text-[11px] font-mono font-semibold hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground min-w-[38px] text-center"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={onZoomIn}
+              className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           {/* Grid Mode Selector */}
           <Popover>
-            <PopoverTrigger className="inline-flex items-center justify-center rounded-xl bg-transparent p-0 w-9 h-9 hover:bg-accent hover:text-accent-foreground cursor-pointer">
+            <PopoverTrigger className="inline-flex items-center justify-center rounded-xl bg-transparent p-0 w-9 h-9 hover:bg-accent cursor-pointer">
               <Grid className="w-4 h-4" />
             </PopoverTrigger>
             <PopoverContent className="w-36 p-1" align="center">
@@ -348,14 +397,14 @@ export function CanvasToolbar({
         <Separator orientation="vertical" className="h-6 mx-1" />
 
         {/* Primary AI Action CTA */}
-        <Button
+        <button
           onClick={onAnalyze}
           disabled={isAnalyzing}
-          className="rounded-xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/25 gap-2 px-4 py-2"
+          className="rounded-xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/25 flex items-center gap-2 px-4 py-2 text-xs cursor-pointer disabled:opacity-50"
         >
           <Sparkles className={`w-4 h-4 ${isAnalyzing ? "animate-spin" : "animate-bounce"}`} />
           {isAnalyzing ? "Analyzing..." : "Analyze Canvas"}
-        </Button>
+        </button>
       </div>
     </TooltipProvider>
   );

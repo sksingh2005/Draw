@@ -20,6 +20,12 @@ export default function Home() {
   const [strokeCount, setStrokeCount] = useState<number>(0);
   const [selectionCoords, setSelectionCoords] = useState<CanvasCoordinates | null>(null);
 
+  // Viewport & Strokes state
+  const [zoom, setZoom] = useState<number>(1);
+  const [panX, setPanX] = useState<number>(0);
+  const [panY, setPanY] = useState<number>(0);
+  const [strokes, setStrokes] = useState<any[]>([]);
+
   // Note nodes on canvas
   const [noteNodes, setNoteNodes] = useState<CanvasNoteNode[]>([]);
 
@@ -111,10 +117,19 @@ export default function Home() {
           strokeColor={strokeColor}
           strokeWidth={strokeWidth}
           gridMode={gridMode}
+          zoom={zoom}
+          panX={panX}
+          panY={panY}
+          onPanChange={(px, py) => {
+            setPanX(px);
+            setPanY(py);
+          }}
           onStrokesChange={setStrokeCount}
           onSelectionChange={setSelectionCoords}
           noteNodes={noteNodes}
           onAddNoteNode={(newNode) => setNoteNodes((prev) => [...prev, newNode])}
+          strokes={strokes}
+          setStrokes={setStrokes}
         />
 
         {/* Spatial Anchored Node Card Overlay */}
@@ -136,6 +151,14 @@ export default function Home() {
           onStrokeWidthChange={setStrokeWidth}
           gridMode={gridMode}
           onGridModeChange={setGridMode}
+          zoom={zoom}
+          onZoomIn={() => setZoom((prev) => Math.min(prev + 0.15, 3))}
+          onZoomOut={() => setZoom((prev) => Math.max(prev - 0.15, 0.4))}
+          onResetZoom={() => {
+            setZoom(1);
+            setPanX(0);
+            setPanY(0);
+          }}
           canUndo={canvasRef.current?.canUndo || false}
           canRedo={canvasRef.current?.canRedo || false}
           onUndo={() => canvasRef.current?.undo()}
