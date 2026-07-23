@@ -1,11 +1,12 @@
 "use client";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import {
   Pencil,
   Eraser,
@@ -90,57 +91,53 @@ export function CanvasToolbar({
         {/* Draw Tools */}
         <div className="flex items-center gap-1">
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={toolMode === "pen" ? "default" : "ghost"}
-                size="icon"
-                onClick={() => onToolModeChange("pen")}
-                className="w-9 h-9 rounded-xl"
-              >
-                <Pencil className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("pen")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "pen" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer"
+              )}
+            >
+              <Pencil className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Freehand Pen (Draw Equations)</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={toolMode === "select" ? "default" : "ghost"}
-                size="icon"
-                onClick={() => onToolModeChange("select")}
-                className="w-9 h-9 rounded-xl"
-              >
-                <Crop className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("select")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "select" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer"
+              )}
+            >
+              <Crop className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Select / Crop Region (Point Coordinates)</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={toolMode === "eraser" ? "default" : "ghost"}
-                size="icon"
-                onClick={() => onToolModeChange("eraser")}
-                className="w-9 h-9 rounded-xl"
-              >
-                <Eraser className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("eraser")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "eraser" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer"
+              )}
+            >
+              <Eraser className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Eraser</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={toolMode === "laser" ? "default" : "ghost"}
-                size="icon"
-                onClick={() => onToolModeChange("laser")}
-                className="w-9 h-9 rounded-xl"
-              >
-                <Zap className="w-4 h-4 text-amber-500" />
-              </Button>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("laser")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "laser" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer"
+              )}
+            >
+              <Zap className="w-4 h-4 text-amber-500" />
             </TooltipTrigger>
             <TooltipContent>Laser Pointer Trail</TooltipContent>
           </Tooltip>
@@ -151,57 +148,53 @@ export function CanvasToolbar({
         {/* Shapes & Text */}
         <div className="flex items-center gap-1">
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={toolMode === "rectangle" ? "default" : "ghost"}
-                size="icon"
-                onClick={() => onToolModeChange("rectangle")}
-                className="w-9 h-9 rounded-xl"
-              >
-                <Square className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("rectangle")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "rectangle" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer"
+              )}
+            >
+              <Square className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Rectangle Shape</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={toolMode === "circle" ? "default" : "ghost"}
-                size="icon"
-                onClick={() => onToolModeChange("circle")}
-                className="w-9 h-9 rounded-xl"
-              >
-                <CircleIcon className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("circle")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "circle" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer"
+              )}
+            >
+              <CircleIcon className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Circle / Ellipse Shape</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={toolMode === "arrow" ? "default" : "ghost"}
-                size="icon"
-                onClick={() => onToolModeChange("arrow")}
-                className="w-9 h-9 rounded-xl"
-              >
-                <MoveUpRight className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("arrow")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "arrow" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer"
+              )}
+            >
+              <MoveUpRight className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Vector Arrow</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant={toolMode === "text" ? "default" : "ghost"}
-                size="icon"
-                onClick={() => onToolModeChange("text")}
-                className="w-9 h-9 rounded-xl"
-              >
-                <Type className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              onClick={() => onToolModeChange("text")}
+              className={cn(
+                buttonVariants({ variant: toolMode === "text" ? "default" : "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer"
+              )}
+            >
+              <Type className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Text & Math Note</TooltipContent>
           </Tooltip>
@@ -298,49 +291,55 @@ export function CanvasToolbar({
         {/* History & Actions */}
         <div className="flex items-center gap-1">
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={!canUndo}
-                onClick={onUndo}
-                className="w-9 h-9 rounded-xl"
-              >
-                <Undo2 className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              disabled={!canUndo}
+              onClick={onUndo}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
+              )}
+            >
+              <Undo2 className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Undo</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={!canRedo}
-                onClick={onRedo}
-                className="w-9 h-9 rounded-xl"
-              >
-                <Redo2 className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              disabled={!canRedo}
+              onClick={onRedo}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
+              )}
+            >
+              <Redo2 className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Redo</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button variant="ghost" size="icon" onClick={onClear} className="w-9 h-9 rounded-xl text-destructive hover:bg-destructive/10">
-                <Trash2 className="w-4 h-4" />
-              </Button>
+            <TooltipTrigger
+              onClick={onClear}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "w-9 h-9 rounded-xl text-destructive hover:bg-destructive/10 cursor-pointer"
+              )}
+            >
+              <Trash2 className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>Clear Canvas</TooltipContent>
           </Tooltip>
 
           <Tooltip>
-            <TooltipTrigger>
-              <Button variant="outline" size="sm" onClick={onOpenPresets} className="rounded-xl text-xs gap-1.5 ml-1">
-                <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Formulas
-              </Button>
+            <TooltipTrigger
+              onClick={onOpenPresets}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "rounded-xl text-xs gap-1.5 ml-1 cursor-pointer"
+              )}
+            >
+              <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Formulas
             </TooltipTrigger>
             <TooltipContent>Insert Formula Template</TooltipContent>
           </Tooltip>
