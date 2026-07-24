@@ -4,7 +4,7 @@ import { analyzeCanvasContent } from "@/lib/ai";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { imageBase64, coordinates, promptText, userApiKey: bodyKey } = body;
+    const { imageBase64, coordinates, promptText, userApiKey: bodyKey, existingElementsSummary } = body;
     const headerKey = req.headers.get("x-gemini-api-key");
     const userApiKey = bodyKey || headerKey || undefined;
 
@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
       coordinates: targetCoordinates,
       promptText,
       userApiKey,
+      existingElementsSummary,
     });
 
     return NextResponse.json({ success: true, data: result });

@@ -81,6 +81,21 @@ export default function Home() {
     savePage(updatedPage);
   }, [excalidrawElements, messages, activePage]);
 
+  // Extract compact layout summary of existing canvas elements
+  const getExistingElementsSummary = useCallback((): string => {
+    if (!excalidrawAPI) return "";
+    const elems = excalidrawAPI.getSceneElements();
+    if (!elems || elems.length === 0) return "Canvas is empty.";
+
+    return elems
+      .filter((e: any) => !e.isDeleted)
+      .map((e: any, idx: number) => {
+        const textSnippet = e.text ? ` text="${e.text.slice(0, 30)}..."` : "";
+        return `[Elem ${idx + 1}]: id="${e.id}" type="${e.type}" bounds=[x:${Math.round(e.x)}, y:${Math.round(e.y)}, w:${Math.round(e.width || 0)}, h:${Math.round(e.height || 0)}]${textSnippet}`;
+      })
+      .join("\n");
+  }, [excalidrawAPI]);
+
   // Switch Workspace Page
   const handleSelectPage = (id: string) => {
     setActivePageId(id);
@@ -158,6 +173,7 @@ export default function Home() {
 
     setIsAnalyzing(true);
     const imageBase64 = await exportExcalidrawSnapshot();
+    const existingSummary = getExistingElementsSummary();
 
     try {
       const res = await fetch("/api/analyze", {
@@ -170,6 +186,7 @@ export default function Home() {
           imageBase64: imageBase64 || undefined,
           coordinates: { x: 100, y: 100, width: 400, height: 300 },
           userApiKey,
+          existingElementsSummary: existingSummary,
         }),
       });
 
@@ -330,9 +347,19 @@ export default function Home() {
         }
       });
     } else {
-      // Fallback single visual note callout box with arrow
-      const targetX = result.targetCoordinates?.x || 100;
-      const targetY = result.targetCoordinates?.y || 100;
+      // Calculate smart anchor coordinates (rightmost edge of existing elements)
+      let rightmostX = 150;
+      let topY = 150;
+      currentElems.forEach((e: any) => {
+        if (!e.isDeleted) {
+          const rightEdge = (e.x || 0) + (e.width || 0);
+          if (rightEdge > rightmostX) rightmostX = rightEdge;
+          if (e.y && e.y < topY) topY = e.y;
+        }
+      });
+
+      const targetX = rightmostX + 40;
+      const targetY = topY;
 
       const stepsText = result.steps
         .slice(0, 3)
@@ -340,13 +367,13 @@ export default function Home() {
         .join("\n");
       const fullNoteText = `✨ AI Analysis:\n${result.summary}\n\nKey Steps:\n${stepsText}`;
 
-      // Arrow pointing to solution box
+      // Arrow pointing from rightmost element to new solution box
       newExcalidrawElements.push({
         id: `ai-arrow-${baseId}`,
         type: "arrow",
-        x: targetX + 180,
-        y: targetY + 60,
-        width: 120,
+        x: rightmostX + 10,
+        y: targetY + 40,
+        width: 60,
         height: 0,
         angle: 0,
         strokeColor: "#6366f1",
@@ -365,7 +392,7 @@ export default function Home() {
         isDeleted: false,
         points: [
           [0, 0],
-          [120, 0],
+          [60, 0],
         ],
         startBinding: null,
         endBinding: null,
@@ -377,7 +404,7 @@ export default function Home() {
       newExcalidrawElements.push({
         id: `ai-box-${baseId}`,
         type: "rectangle",
-        x: targetX + 320,
+        x: targetX,
         y: targetY,
         width: 320,
         height: 180,
@@ -402,7 +429,7 @@ export default function Home() {
       newExcalidrawElements.push({
         id: `ai-note-${baseId}`,
         type: "text",
-        x: targetX + 336,
+        x: targetX + 16,
         y: targetY + 16,
         width: 288,
         height: 148,
@@ -449,6 +476,8 @@ export default function Home() {
       finalCrop = (await exportExcalidrawSnapshot()) || undefined;
     }
 
+    const existingSummary = getExistingElementsSummary();
+
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: "user",
@@ -472,6 +501,7 @@ export default function Home() {
           coordinates: { x: 150, y: 150, width: 300, height: 200 },
           promptText: text,
           userApiKey,
+          existingElementsSummary: existingSummary,
         }),
       });
 

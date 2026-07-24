@@ -13,6 +13,7 @@ export async function analyzeCanvasContent(params: {
   coordinates: CanvasCoordinates;
   promptText?: string;
   userApiKey?: string;
+  existingElementsSummary?: string;
 }): Promise<MathAnalysisResult> {
   const apiKey =
     params.userApiKey ||
@@ -31,6 +32,11 @@ export async function analyzeCanvasContent(params: {
 Examine the provided canvas cropped image and/or text query.
 
 You MUST generate interactive visual canvas elements ("canvasDrawings") using shapes, arrows, ellipses, and formatted callouts to physically draw your explanation directly onto the user's canvas space!
+
+SPATIAL LAYOUT & NON-DESTRUCTIVE CANVAS UPDATE RULES:
+1. Do NOT overwrite or duplicate existing canvas elements.
+2. If this is a follow-up question or clarification, anchor your new explanation drawings ADJACENT to the existing elements (e.g. x = targetX + targetWidth + 50) and draw a connecting ARROW pointing from the reference element to your new clarification box.
+3. Use visual callouts (rectangles, diamonds, ellipses) and arrows to create a clean, connected graph of logic on the whiteboard.
 
 You MUST respond strictly with valid raw JSON matching this schema:
 {
@@ -69,7 +75,7 @@ You MUST respond strictly with valid raw JSON matching this schema:
       "strokeColor": "#6366f1",
       "backgroundColor": "#e0e7ff",
       "fillStyle": "hachure",
-      "text": "✨ AI Solution:\\nStep 1: Identify a=1, b=-5, c=6\\nStep 2: Apply Quadratic Formula\\nRoots: x = 2, x = 3"
+      "text": "✨ AI Clarification:\\nStep 1: Identify a=1, b=-5, c=6\\nStep 2: Apply Quadratic Formula\\nRoots: x = 2, x = 3"
     },
     {
       "type": "ellipse",
@@ -117,8 +123,9 @@ You MUST respond strictly with valid raw JSON matching this schema:
     });
   }
 
-  const userPrompt = `Spatial Canvas Coordinates: [x:${params.coordinates.x}, y:${params.coordinates.y}, width:${params.coordinates.width}, height:${params.coordinates.height}]
-${params.promptText ? `User Question / Context: "${params.promptText}"` : "Please analyze the drawn mathematical equation / problem in the canvas crop image and generate visual canvas drawings (arrows, callout boxes, shapes) explaining the solution."}`;
+  const userPrompt = `Target Spatial Canvas Coordinates: [x:${params.coordinates.x}, y:${params.coordinates.y}, width:${params.coordinates.width}, height:${params.coordinates.height}]
+${params.existingElementsSummary ? `Existing Canvas Layout Map:\n${params.existingElementsSummary}\n` : ""}
+${params.promptText ? `User Question / Follow-Up Context: "${params.promptText}"` : "Please analyze the drawn problem in the canvas crop image and generate visual canvas drawings (arrows, callout boxes, shapes) explaining or clarifying the solution."}`;
 
   contents.push({ text: userPrompt });
 
