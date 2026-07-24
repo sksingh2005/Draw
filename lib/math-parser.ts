@@ -55,6 +55,19 @@ export interface PracticeProblem {
   solution: string;
 }
 
+export interface AiCanvasElement {
+  type: "rectangle" | "ellipse" | "arrow" | "text" | "diamond";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  strokeColor?: string;
+  backgroundColor?: string;
+  fillStyle?: "hachure" | "solid" | "cross-hatch";
+  text?: string;
+  label?: string;
+}
+
 export interface MathAnalysisResult {
   id: string;
   classification: "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph";
@@ -68,6 +81,7 @@ export interface MathAnalysisResult {
   graphConfig?: GraphConfig;
   conceptExplanation?: ConceptExplanation;
   practiceProblems: PracticeProblem[];
+  canvasDrawings?: AiCanvasElement[];
   createdAt: number;
 }
 
@@ -132,6 +146,20 @@ export function parseMathAnalysisResponse(
             solution: String(p.solution || "Solution")
           }))
         : [],
+      canvasDrawings: Array.isArray(parsed.canvasDrawings)
+        ? parsed.canvasDrawings.map((elem: any) => ({
+            type: elem.type || "rectangle",
+            x: Number(elem.x) || coordinates.x + 350,
+            y: Number(elem.y) || coordinates.y,
+            width: Number(elem.width) || 280,
+            height: Number(elem.height) || 140,
+            strokeColor: elem.strokeColor || "#6366f1",
+            backgroundColor: elem.backgroundColor || "transparent",
+            fillStyle: elem.fillStyle || "hachure",
+            text: elem.text || undefined,
+            label: elem.label || undefined,
+          }))
+        : undefined,
       createdAt: Date.now()
     };
   } catch (err) {
@@ -150,9 +178,7 @@ function validateClassification(cat: any): MathAnalysisResult["classification"] 
 
 function cleanLatex(latexStr: string): string {
   if (!latexStr) return "";
-  // Ensure unescaped backslashes are preserved for KaTeX
   let cleaned = latexStr.trim();
-  // Remove wrapping $ or $$ if provided by LLM
   if (cleaned.startsWith("$$") && cleaned.endsWith("$$")) {
     cleaned = cleaned.slice(2, -2).trim();
   } else if (cleaned.startsWith("$") && cleaned.endsWith("$")) {
@@ -173,7 +199,6 @@ function parseGraphConfig(cfg: any): GraphConfig {
       y: Number(p.y) || 0
     }));
   } else {
-    // Generate sample points if functionString is available
     points = generateSamplePoints(cfg.functionString || "x^2", domain);
   }
 
@@ -206,7 +231,7 @@ export function generateSamplePoints(funcStr: string, domain: [number, number]):
       else if (funcStr.includes("x^2") || funcStr.includes("x*x")) y = x * x;
       else if (funcStr.includes("x^3")) y = x * x * x;
       else if (funcStr.includes("1/x")) y = x !== 0 ? 1 / x : 0;
-      else y = x; // Linear fallback
+      else y = x;
     } catch {
       y = 0;
     }
@@ -221,13 +246,16 @@ export function createFallbackResult(
   coordinates: CanvasCoordinates,
   resultId: string
 ): MathAnalysisResult {
+  const targetX = coordinates.x || 100;
+  const targetY = coordinates.y || 100;
+
   return {
     id: resultId,
     classification: "equation",
     latexFormula: "ax^2 + bx + c = 0",
     detectedText: rawText ? rawText.slice(0, 100) : "Handwritten Math Expression",
     targetCoordinates: coordinates,
-    summary: "Detailed step-by-step breakdown of the detected canvas problem.",
+    summary: "Step-by-step breakdown of the detected canvas problem.",
     keyVariables: [
       { symbol: "a", value: "1", description: "Leading coefficient" },
       { symbol: "b", value: "-5", description: "Linear coefficient" },
@@ -281,13 +309,36 @@ export function createFallbackResult(
         latex: "x^2 - 7x + 12 = 0",
         hint: "Find two numbers that multiply to 12 and add to 7.",
         solution: "x = 3 \\text{ or } x = 4"
+      }
+    ],
+    canvasDrawings: [
+      {
+        type: "arrow",
+        x: targetX + 180,
+        y: targetY + 60,
+        width: 120,
+        height: 0,
+        strokeColor: "#6366f1"
       },
       {
-        id: "p2",
-        question: "Find the roots of:",
-        latex: "x^2 - 4 = 0",
-        hint: "Use the difference of squares rule: a² - b² = (a-b)(a+b).",
-        solution: "x = 2 \\text{ or } x = -2"
+        type: "rectangle",
+        x: targetX + 320,
+        y: targetY,
+        width: 320,
+        height: 180,
+        strokeColor: "#6366f1",
+        backgroundColor: "#e0e7ff",
+        fillStyle: "hachure",
+        text: "✨ AI Solution:\nx² - 5x + 6 = 0\nRoots: x = 2, x = 3"
+      },
+      {
+        type: "ellipse",
+        x: targetX + 340,
+        y: targetY + 120,
+        width: 140,
+        height: 40,
+        strokeColor: "#ef4444",
+        text: "Root 1: x = 2"
       }
     ],
     createdAt: Date.now()

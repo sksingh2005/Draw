@@ -201,51 +201,238 @@ export default function Home() {
     }
   };
 
-  // Helper to place AI explanation node directly on Excalidraw Canvas
+  // Helper to place AI visual drawings (shapes, arrows, ellipses, callout boxes) directly on Excalidraw Canvas
   const insertAiExplanationOnCanvas = (result: MathAnalysisResult) => {
     if (!excalidrawAPI) return;
     const currentElems = excalidrawAPI.getSceneElements();
 
-    const stepsText = result.steps
-      .slice(0, 3)
-      .map((s) => `${s.stepNumber}. ${s.title}`)
-      .join("\n");
+    const newExcalidrawElements: any[] = [];
+    const baseId = Date.now();
 
-    const fullNoteText = `✨ AI Analysis:\n${result.summary}\n\nSteps:\n${stepsText}`;
+    if (result.canvasDrawings && result.canvasDrawings.length > 0) {
+      result.canvasDrawings.forEach((item, idx) => {
+        const elemId = `ai-elem-${baseId}-${idx}`;
 
-    const aiTextElem = {
-      id: `ai-note-${Date.now()}`,
-      type: "text",
-      x: 350 + Math.random() * 40,
-      y: 180 + Math.random() * 40,
-      width: 300,
-      height: 100,
-      angle: 0,
-      strokeColor: "#6366f1",
-      backgroundColor: "transparent",
-      fillStyle: "hachure",
-      strokeWidth: 2,
-      strokeStyle: "solid",
-      roughness: 1,
-      opacity: 100,
-      groupIds: [],
-      frameId: null,
-      roundness: null,
-      seed: Math.floor(Math.random() * 100000),
-      version: 1,
-      versionNonce: Math.floor(Math.random() * 100000),
-      isDeleted: false,
-      text: fullNoteText,
-      fontSize: 16,
-      fontFamily: 1,
-      textAlign: "left",
-      verticalAlign: "top",
-      containerId: null,
-      originalText: fullNoteText,
-      lineHeight: 1.25,
-    };
+        if (item.type === "rectangle" || item.type === "diamond") {
+          newExcalidrawElements.push({
+            id: elemId,
+            type: item.type,
+            x: item.x,
+            y: item.y,
+            width: item.width,
+            height: item.height,
+            angle: 0,
+            strokeColor: item.strokeColor || "#6366f1",
+            backgroundColor: item.backgroundColor || "#e0e7ff",
+            fillStyle: item.fillStyle || "hachure",
+            strokeWidth: 2,
+            strokeStyle: "solid",
+            roughness: 1,
+            opacity: 100,
+            groupIds: [],
+            frameId: null,
+            roundness: { type: 3 },
+            seed: Math.floor(Math.random() * 100000),
+            version: 1,
+            versionNonce: Math.floor(Math.random() * 100000),
+            isDeleted: false,
+          });
 
-    const updated = [...currentElems, aiTextElem];
+          if (item.text) {
+            newExcalidrawElements.push({
+              id: `ai-text-${baseId}-${idx}`,
+              type: "text",
+              x: item.x + 16,
+              y: item.y + 16,
+              width: item.width - 32,
+              height: item.height - 32,
+              angle: 0,
+              strokeColor: "#1e1b4b",
+              backgroundColor: "transparent",
+              fillStyle: "hachure",
+              strokeWidth: 1,
+              strokeStyle: "solid",
+              roughness: 1,
+              opacity: 100,
+              groupIds: [],
+              frameId: null,
+              roundness: null,
+              seed: Math.floor(Math.random() * 100000),
+              version: 1,
+              versionNonce: Math.floor(Math.random() * 100000),
+              isDeleted: false,
+              text: item.text,
+              fontSize: 16,
+              fontFamily: 1,
+              textAlign: "left",
+              verticalAlign: "top",
+              containerId: elemId,
+              originalText: item.text,
+              lineHeight: 1.25,
+            });
+          }
+        } else if (item.type === "ellipse") {
+          newExcalidrawElements.push({
+            id: elemId,
+            type: "ellipse",
+            x: item.x,
+            y: item.y,
+            width: item.width,
+            height: item.height,
+            angle: 0,
+            strokeColor: item.strokeColor || "#ef4444",
+            backgroundColor: item.backgroundColor || "transparent",
+            fillStyle: item.fillStyle || "hachure",
+            strokeWidth: 2,
+            strokeStyle: "solid",
+            roughness: 1,
+            opacity: 100,
+            groupIds: [],
+            frameId: null,
+            roundness: null,
+            seed: Math.floor(Math.random() * 100000),
+            version: 1,
+            versionNonce: Math.floor(Math.random() * 100000),
+            isDeleted: false,
+          });
+        } else if (item.type === "arrow") {
+          newExcalidrawElements.push({
+            id: elemId,
+            type: "arrow",
+            x: item.x,
+            y: item.y,
+            width: Math.abs(item.width),
+            height: Math.abs(item.height),
+            angle: 0,
+            strokeColor: item.strokeColor || "#3b82f6",
+            backgroundColor: "transparent",
+            fillStyle: "hachure",
+            strokeWidth: 2,
+            strokeStyle: "solid",
+            roughness: 1,
+            opacity: 100,
+            groupIds: [],
+            frameId: null,
+            roundness: { type: 2 },
+            seed: Math.floor(Math.random() * 100000),
+            version: 1,
+            versionNonce: Math.floor(Math.random() * 100000),
+            isDeleted: false,
+            points: [
+              [0, 0],
+              [item.width || 120, item.height || 0],
+            ],
+            startBinding: null,
+            endBinding: null,
+            startArrowhead: null,
+            endArrowhead: "arrow",
+          });
+        }
+      });
+    } else {
+      // Fallback single visual note callout box with arrow
+      const targetX = result.targetCoordinates?.x || 100;
+      const targetY = result.targetCoordinates?.y || 100;
+
+      const stepsText = result.steps
+        .slice(0, 3)
+        .map((s) => `${s.stepNumber}. ${s.title}`)
+        .join("\n");
+      const fullNoteText = `✨ AI Analysis:\n${result.summary}\n\nKey Steps:\n${stepsText}`;
+
+      // Arrow pointing to solution box
+      newExcalidrawElements.push({
+        id: `ai-arrow-${baseId}`,
+        type: "arrow",
+        x: targetX + 180,
+        y: targetY + 60,
+        width: 120,
+        height: 0,
+        angle: 0,
+        strokeColor: "#6366f1",
+        backgroundColor: "transparent",
+        fillStyle: "hachure",
+        strokeWidth: 2,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: { type: 2 },
+        seed: Math.floor(Math.random() * 100000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 100000),
+        isDeleted: false,
+        points: [
+          [0, 0],
+          [120, 0],
+        ],
+        startBinding: null,
+        endBinding: null,
+        startArrowhead: null,
+        endArrowhead: "arrow",
+      });
+
+      // Callout Rectangle Box
+      newExcalidrawElements.push({
+        id: `ai-box-${baseId}`,
+        type: "rectangle",
+        x: targetX + 320,
+        y: targetY,
+        width: 320,
+        height: 180,
+        angle: 0,
+        strokeColor: "#6366f1",
+        backgroundColor: "#e0e7ff",
+        fillStyle: "hachure",
+        strokeWidth: 2,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: { type: 3 },
+        seed: Math.floor(Math.random() * 100000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 100000),
+        isDeleted: false,
+      });
+
+      // Formatted Callout Text
+      newExcalidrawElements.push({
+        id: `ai-note-${baseId}`,
+        type: "text",
+        x: targetX + 336,
+        y: targetY + 16,
+        width: 288,
+        height: 148,
+        angle: 0,
+        strokeColor: "#1e1b4b",
+        backgroundColor: "transparent",
+        fillStyle: "hachure",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: null,
+        seed: Math.floor(Math.random() * 100000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 100000),
+        isDeleted: false,
+        text: fullNoteText,
+        fontSize: 15,
+        fontFamily: 1,
+        textAlign: "left",
+        verticalAlign: "top",
+        containerId: `ai-box-${baseId}`,
+        originalText: fullNoteText,
+        lineHeight: 1.25,
+      });
+    }
+
+    const updated = [...currentElems, ...newExcalidrawElements];
     excalidrawAPI.updateScene({ elements: updated as any });
     setExcalidrawElements(updated);
   };

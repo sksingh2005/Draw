@@ -21,16 +21,18 @@ export async function analyzeCanvasContent(params: {
 
   if (!apiKey || apiKey.trim() === "") {
     throw new Error(
-      "Gemini API Key missing! Please click '🔑 Connect Gemini Key' in the top navbar to enter your Gemini API key from Google AI Studio."
+      "Gemini API Key missing! Please click '🔑 Connect Key' in the top navbar to enter your Gemini API key from Google AI Studio."
     );
   }
 
   const ai = new GoogleGenAI({ apiKey: apiKey.trim() });
 
-  const systemInstruction = `You are an elite AI Mathematics, Science, and Logic Professor analyzing an interactive whiteboard canvas.
+  const systemInstruction = `You are an elite AI Professor and Interactive Visual Whiteboard Creator.
 Examine the provided canvas cropped image and/or text query.
 
-You MUST respond strictly with valid raw JSON (no markdown formatting or chat commentary outside JSON) matching this schema:
+You MUST generate interactive visual canvas elements ("canvasDrawings") using shapes, arrows, ellipses, and formatted callouts to physically draw your explanation directly onto the user's canvas space!
+
+You MUST respond strictly with valid raw JSON matching this schema:
 {
   "classification": "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph",
   "latexFormula": "string in raw LaTeX e.g. x^2 - 5x + 6 = 0",
@@ -47,6 +49,36 @@ You MUST respond strictly with valid raw JSON (no markdown formatting or chat co
       "explanation": "Clear human explanation of this transformation",
       "latex": "LaTeX representation of step",
       "result": "Intermediate outcome"
+    }
+  ],
+  "canvasDrawings": [
+    {
+      "type": "arrow",
+      "x": 350,
+      "y": 200,
+      "width": 120,
+      "height": 0,
+      "strokeColor": "#6366f1"
+    },
+    {
+      "type": "rectangle",
+      "x": 480,
+      "y": 150,
+      "width": 320,
+      "height": 180,
+      "strokeColor": "#6366f1",
+      "backgroundColor": "#e0e7ff",
+      "fillStyle": "hachure",
+      "text": "✨ AI Solution:\\nStep 1: Identify a=1, b=-5, c=6\\nStep 2: Apply Quadratic Formula\\nRoots: x = 2, x = 3"
+    },
+    {
+      "type": "ellipse",
+      "x": 500,
+      "y": 280,
+      "width": 140,
+      "height": 40,
+      "strokeColor": "#ef4444",
+      "text": "Root x = 2"
     }
   ],
   "graphConfig": {
@@ -86,7 +118,7 @@ You MUST respond strictly with valid raw JSON (no markdown formatting or chat co
   }
 
   const userPrompt = `Spatial Canvas Coordinates: [x:${params.coordinates.x}, y:${params.coordinates.y}, width:${params.coordinates.width}, height:${params.coordinates.height}]
-${params.promptText ? `User Question / Context: "${params.promptText}"` : "Please analyze the drawn mathematical equation / problem in the canvas crop image."}`;
+${params.promptText ? `User Question / Context: "${params.promptText}"` : "Please analyze the drawn mathematical equation / problem in the canvas crop image and generate visual canvas drawings (arrows, callout boxes, shapes) explaining the solution."}`;
 
   contents.push({ text: userPrompt });
 
