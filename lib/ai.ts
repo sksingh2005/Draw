@@ -5,8 +5,16 @@ import {
   parseMathAnalysisResponse,
 } from "./math-parser";
 
+const CANDIDATE_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+  "gemini-2.0-flash-exp",
+];
+
 /**
- * Perform real spatial AI analysis on a cropped canvas image and/or equation query using Gemini 2.5 Flash
+ * Perform real spatial AI analysis on a cropped canvas image and/or equation query using Gemini API
  */
 export async function analyzeCanvasContent(params: {
   imageBase64?: string;
@@ -129,16 +137,28 @@ ${params.promptText ? `User Question / Follow-Up Context: "${params.promptText}"
 
   contents.push({ text: userPrompt });
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents,
-    config: {
-      systemInstruction,
-      responseMimeType: "application/json",
-      temperature: 0.2,
-    },
-  });
+  let lastError: any = null;
 
-  const textOutput = response.text || "";
-  return parseMathAnalysisResponse(textOutput, params.coordinates);
+  // Try candidate models in order until one succeeds
+  for (const modelName of CANDIDATE_MODELS) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          temperature: 0.2,
+        },
+      });
+
+      const textOutput = response.text || "";
+      return parseMathAnalysisResponse(textOutput, params.coordinates);
+    } catch (err: any) {
+      console.warn(`Model ${modelName} failed or not found, trying next candidate:`, err?.message || err);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error("Failed to execute Gemini API call across all candidate models.");
 }
