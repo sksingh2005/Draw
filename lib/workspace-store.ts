@@ -1,4 +1,17 @@
-import { CanvasStroke, CanvasNoteNode } from "@/components/canvas/MathCanvas";
+export interface CanvasStroke {
+  id: string;
+  points: { x: number; y: number }[];
+  color: string;
+  width: number;
+}
+
+export interface CanvasNoteNode {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  latex?: string;
+}
 import { MathAnalysisResult } from "./math-parser";
 
 export interface ChatMessage {
