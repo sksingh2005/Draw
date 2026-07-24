@@ -2,6 +2,7 @@
 
 import React, { useCallback } from "react";
 import dynamic from "next/dynamic";
+import "@excalidraw/excalidraw/index.css";
 
 export interface ExcalidrawImperativeAPI {
   getSceneElements: () => readonly any[];
