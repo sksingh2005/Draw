@@ -21,6 +21,9 @@ import {
   deletePage,
   getActivePageId,
   setActivePageId,
+  exportPageJson,
+  exportAllPagesJson,
+  parseAndValidateWorkspaceImport,
 } from "@/lib/workspace-store";
 import { streamAnalyze } from "@/lib/analyze-client";
 import {
@@ -571,28 +574,69 @@ export default function Home() {
     setIsPanelOpen(false);
   };
 
+  const handleExportPage = () => {
+    if (!activePage) return;
+    const currentElements = excalidrawAPI ? excalidrawAPI.getSceneElements() : excalidrawElements;
+    const pageToExport: WorkspacePage = {
+      ...activePage,
+      excalidrawElements: currentElements as any,
+      messages,
+      updatedAt: Date.now(),
+    };
+    exportPageJson(pageToExport);
+  };
+
+  const handleExportAll = () => {
+    const currentElements = excalidrawAPI ? excalidrawAPI.getSceneElements() : excalidrawElements;
+    const updatedPages = pages.map((p) =>
+      p.id === activePageId
+        ? {
+            ...p,
+            excalidrawElements: currentElements as any,
+            messages,
+            updatedAt: Date.now(),
+          }
+        : p
+    );
+    exportAllPagesJson(updatedPages);
+  };
+
+  const handleImportWorkspace = async (file: File) => {
+    try {
+      const text = await file.text();
+      const importedPages = parseAndValidateWorkspaceImport(text);
+      
+      importedPages.forEach((p) => savePage(p));
+      const allPages = getSavedPages();
+      setPages(allPages);
+
+      const firstImported = importedPages[0];
+      if (firstImported) {
+        handleSelectPage(firstImported.id);
+      }
+    } catch (err: any) {
+      alert(`Import Failed: ${err?.message || "Invalid JSON file"}`);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background font-sans">
       {/* Top Navbar */}
       <Navbar
-        activeTitle={activePage?.title || "Excalidraw AI Workspace"}
+        sidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+        activePageTitle={activePage?.title || "Excalidraw AI Workspace"}
+        isAnalyzing={isAnalyzing}
+        onAnalyzeCanvas={handleAnalyzeCanvas}
+        onOpenPresetLibrary={() => setPresetLibraryOpen(true)}
+        hasApiKey={Boolean(userApiKey)}
+        onOpenApiKeyModal={() => setApiKeyModalOpen(true)}
+        onToggleChat={() => setIsChatOpen((prev) => !prev)}
         isMaximized={isCanvasMaximized}
         onToggleMaximize={() => setIsCanvasMaximized((prev) => !prev)}
-        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
-        onToggleChat={() => setIsChatOpen((prev) => !prev)}
-        onOpenPresets={() => setPresetLibraryOpen(true)}
-        onClearCanvas={handleClearAll}
-        onExportCanvas={async () => {
-          const crop = await exportExcalidrawSnapshot();
-          if (!crop) return;
-          const link = document.createElement("a");
-          link.download = `excalidraw-${Date.now()}.png`;
-          link.href = crop;
-          link.click();
-        }}
-        onOpenApiKeyModal={() => setApiKeyModalOpen(true)}
-        hasApiKey={Boolean(userApiKey)}
-        analysisCount={messages.length}
+        onExportPage={handleExportPage}
+        onExportAll={handleExportAll}
+        onImportJson={handleImportWorkspace}
       />
 
       {/* Main 3-Pane Responsive Layout */}

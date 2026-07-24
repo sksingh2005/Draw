@@ -1,50 +1,80 @@
 "use client";
 
-import React from "react";
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
+  PanelLeft,
   Sparkles,
   BookOpen,
-  Download,
-  Trash2,
-  Cpu,
-  PanelLeft,
+  Key,
   MessageSquare,
   Maximize2,
   Minimize2,
-  Key,
+  Download,
+  Upload,
+  FileJson,
+  Share2,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface NavbarProps {
-  activeTitle?: string;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  activePageTitle?: string;
+  isAnalyzing?: boolean;
+  onAnalyzeCanvas: () => void;
+  onOpenPresetLibrary: () => void;
+  hasApiKey: boolean;
+  onOpenApiKeyModal: () => void;
+  onToggleChat: () => void;
   isMaximized: boolean;
   onToggleMaximize: () => void;
-  onToggleSidebar: () => void;
-  onToggleChat: () => void;
-  onOpenPresets: () => void;
-  onClearCanvas: () => void;
-  onExportCanvas: () => void;
-  onOpenApiKeyModal: () => void;
-  hasApiKey: boolean;
-  analysisCount: number;
+  onExportPage?: () => void;
+  onExportAll?: () => void;
+  onImportJson?: (file: File) => void;
 }
 
 export function Navbar({
-  activeTitle = "Interactive Workspace",
+  sidebarOpen,
+  onToggleSidebar,
+  activePageTitle = "Untitled Board",
+  isAnalyzing = false,
+  onAnalyzeCanvas,
+  onOpenPresetLibrary,
+  hasApiKey,
+  onOpenApiKeyModal,
+  onToggleChat,
   isMaximized,
   onToggleMaximize,
-  onToggleSidebar,
-  onToggleChat,
-  onOpenPresets,
-  onClearCanvas,
-  onExportCanvas,
-  onOpenApiKeyModal,
-  hasApiKey,
-  analysisCount,
+  onExportPage,
+  onExportAll,
+  onImportJson,
 }: NavbarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onImportJson) {
+      onImportJson(file);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   return (
     <header className="h-14 border-b bg-background/80 backdrop-blur-xl px-4 flex items-center justify-between z-30 sticky top-0">
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept=".json"
+        className="hidden"
+      />
+
       {/* Left Brand & Sidebar Toggle */}
       <div className="flex items-center gap-3">
         {!isMaximized && (
@@ -59,30 +89,73 @@ export function Navbar({
           </Button>
         )}
 
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-          <Sparkles className="w-4 h-4" />
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-sm font-bold text-xs">
+            ∑
+          </div>
+          <span className="font-semibold text-sm tracking-tight hidden sm:inline-block">
+            Antigravity<span className="text-indigo-500 font-bold ml-1">Draw</span>
+          </span>
         </div>
 
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-extrabold text-sm tracking-tight bg-gradient-to-r from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent">
-              {activeTitle}
-            </h1>
-            <Badge variant="outline" className="text-[10px] py-0 px-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20">
-              AI Whiteboard
-            </Badge>
-          </div>
+        <div className="h-4 w-px bg-border mx-1" />
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-md max-w-[200px] truncate">
+            {activePageTitle}
+          </span>
         </div>
       </div>
 
-      {/* Center AI Engine Status */}
-      <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-muted/60 border text-xs text-muted-foreground">
-        <Cpu className="w-3.5 h-3.5 text-indigo-500" />
-        <span>Gemini Engine:</span>
-        <span className="font-semibold text-foreground flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${hasApiKey ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
-          {hasApiKey ? "Gemini 2.5 Active" : "Key Needed"}
-        </span>
+      {/* Center Action Controls */}
+      <div className="flex items-center gap-2">
+        <Button
+          onClick={onAnalyzeCanvas}
+          disabled={isAnalyzing}
+          size="sm"
+          className="rounded-xl text-xs font-medium gap-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-md shadow-indigo-500/20"
+        >
+          <Sparkles className={`w-3.5 h-3.5 ${isAnalyzing ? "animate-spin" : ""}`} />
+          {isAnalyzing ? "Analyzing..." : "Analyze Selection"}
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onOpenPresetLibrary}
+          className="rounded-xl text-xs gap-1.5 hidden md:flex"
+        >
+          <BookOpen className="w-3.5 h-3.5" /> Presets
+        </Button>
+
+        {/* Share & Import/Export Controls */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1.5">
+                <Share2 className="w-3.5 h-3.5 text-indigo-500" /> Export
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="center" className="w-48 z-50">
+            <DropdownMenuItem onClick={onExportPage} className="text-xs gap-2 cursor-pointer">
+              <Download className="w-3.5 h-3.5 text-indigo-500" /> Export Active Board
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onExportAll} className="text-xs gap-2 cursor-pointer">
+              <FileJson className="w-3.5 h-3.5 text-purple-500" /> Export All Boards
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => fileInputRef.current?.click()}
+          className="rounded-xl text-xs gap-1.5"
+          title="Import board or workspace JSON"
+        >
+          <Upload className="w-3.5 h-3.5 text-emerald-500" /> Import
+        </Button>
       </div>
 
       {/* Right Quick Actions */}
@@ -96,31 +169,26 @@ export function Navbar({
               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
               : "bg-amber-500/10 text-amber-600 dark:text-amber-400 animate-pulse"
           }`}
+          title="Configure Gemini API Key"
         >
           <Key className="w-3.5 h-3.5" />
-          {hasApiKey ? "Gemini Connected" : "Connect Key"}
-        </Button>
-
-        <Button variant="outline" size="sm" onClick={onOpenPresets} className="rounded-xl text-xs gap-1.5 hidden sm:flex">
-          <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Formulas
-        </Button>
-
-        <Button variant="outline" size="sm" onClick={onExportCanvas} className="rounded-xl text-xs gap-1.5">
-          <Download className="w-3.5 h-3.5 text-foreground" /> Export PNG
-        </Button>
-
-        <Button variant="ghost" size="sm" onClick={onClearCanvas} className="rounded-xl text-xs gap-1.5 text-destructive hover:bg-destructive/10">
-          <Trash2 className="w-3.5 h-3.5" /> Clear
+          <span className="hidden sm:inline">
+            {hasApiKey ? "API Connected" : "Set API Key"}
+          </span>
         </Button>
 
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           onClick={onToggleMaximize}
-          className="w-9 h-9 rounded-xl text-muted-foreground hover:text-foreground"
-          title={isMaximized ? "Minimize Canvas Workspace" : "Maximize Canvas Workspace"}
+          className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground"
+          title={isMaximized ? "Exit Maximize Mode" : "Maximize Canvas"}
         >
-          {isMaximized ? <Minimize2 className="w-4 h-4 text-indigo-500" /> : <Maximize2 className="w-4 h-4" />}
+          {isMaximized ? (
+            <Minimize2 className="w-4 h-4" />
+          ) : (
+            <Maximize2 className="w-4 h-4" />
+          )}
         </Button>
 
         {!isMaximized && (

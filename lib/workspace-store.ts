@@ -31,6 +31,8 @@ export interface WorkspacePage {
   updatedAt: number;
   strokes: CanvasStroke[];
   noteNodes: CanvasNoteNode[];
+  excalidrawElements?: any[];
+  appState?: Record<string, any>;
   messages: ChatMessage[];
 }
 
@@ -180,4 +182,79 @@ export function setActivePageId(id: string): void {
   } catch (err) {
     console.warn("Failed to save active page ID:", err);
   }
+}
+
+export function exportPageJson(page: WorkspacePage): void {
+  const filename = `${page.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-board.json`;
+  const jsonStr = JSON.stringify(page, null, 2);
+  const blob = new Blob([jsonStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function exportAllPagesJson(pages: WorkspacePage[]): void {
+  const filename = `workspace-bundle-${new Date().toISOString().slice(0, 10)}.json`;
+  const payload = {
+    version: 1,
+    type: "workspace-bundle",
+    exportedAt: Date.now(),
+    pages,
+  };
+  const jsonStr = JSON.stringify(payload, null, 2);
+  const blob = new Blob([jsonStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function parseAndValidateWorkspaceImport(jsonContent: string): WorkspacePage[] {
+  const data = JSON.parse(jsonContent);
+  const pagesToImport: WorkspacePage[] = [];
+
+  const sanitizePage = (p: any): WorkspacePage => {
+    if (!p || typeof p !== "object" || !p.title) {
+      throw new Error("Invalid board object: missing required title field");
+    }
+    const timestamp = Date.now();
+    const uniqueSuffix = Math.random().toString(36).substring(2, 7);
+    return {
+      id: `page-imported-${timestamp}-${uniqueSuffix}`,
+      title: p.title.includes("(Imported)") ? p.title : `${p.title} (Imported)`,
+      category: p.category || "general",
+      createdAt: p.createdAt || timestamp,
+      updatedAt: timestamp,
+      strokes: Array.isArray(p.strokes) ? p.strokes : [],
+      noteNodes: Array.isArray(p.noteNodes) ? p.noteNodes : [],
+      excalidrawElements: Array.isArray(p.excalidrawElements) ? p.excalidrawElements : [],
+      appState: p.appState || {},
+      messages: Array.isArray(p.messages) ? p.messages : [],
+    };
+  };
+
+  if (Array.isArray(data)) {
+    data.forEach((p) => pagesToImport.push(sanitizePage(p)));
+  } else if (data && typeof data === "object") {
+    if (data.type === "workspace-bundle" && Array.isArray(data.pages)) {
+      data.pages.forEach((p: any) => pagesToImport.push(sanitizePage(p)));
+    } else if (data.title) {
+      pagesToImport.push(sanitizePage(data));
+    } else {
+      throw new Error("Unrecognized JSON format: expected board page or workspace bundle.");
+    }
+  } else {
+    throw new Error("Invalid JSON content.");
+  }
+
+  if (pagesToImport.length === 0) {
+    throw new Error("No valid board pages found in JSON file.");
+  }
+
+  return pagesToImport;
 }
