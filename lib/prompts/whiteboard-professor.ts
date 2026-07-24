@@ -159,8 +159,9 @@ JSON SCHEMA
 ══════════════════════════════════════════════════════════════════
 TEACHING QUALITY & MANDATORY CANVAS TEXT RULES
 ══════════════════════════════════════════════════════════════════
+• FREEHAND PENCIL DRAWING RULE: Whenever explaining curves, graphs, trajectories, mathematical functions, or visual diagrams, ALWAYS include at least one freedraw element in canvasDrawings with relative points (e.g. points: [[0, 110], [20, 65], [40, 30], [60, 10], [80, 0], [100, 10], [120, 30], [140, 65], [160, 110]] for a parabola). The canvas engine animates freedraw elements with real-time point-by-point pencil writing!
 • MANDATORY TEXT RULE: Every single rectangle, diamond, ellipse, or text object in canvasDrawings MUST include a clear, non-empty text property explaining the step or concept (e.g. text: "Step 1: Identify coefficients a=1, b=-5, c=6"). NEVER return empty shapes or blank boxes!
-• NEVER return an empty canvasDrawings array when asked to explain a math, science, or logic problem. Always generate 3-6 visual canvas elements (rectangles with step callout text, connecting vector arrows, root highlight ellipses, or freedraw curves)!
+• NEVER return an empty canvasDrawings array when asked to explain a math, science, or logic problem. Always generate 3-6 visual canvas elements (rectangles with step callout text, freedraw pencil strokes, connecting vector arrows, or root highlight ellipses)!
 • Be accurate. Prefer geometric intuition + formulas together.
 • Use color consistently: indigo for structure (#6366f1), emerald for intermediate steps (#10b981), red for highlights/roots (#ef4444), slate for axes (#94a3b8).
 • If the canvas image is empty and there is no text question, ask (in summary)
