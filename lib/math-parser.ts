@@ -80,6 +80,10 @@ export interface MathAnalysisResult {
   detectedText: string;
   targetCoordinates: CanvasCoordinates;
   summary: string;
+  /** Always append-only for canvas safety; never full rewrite. */
+  updateMode?: "append";
+  /** What part of the board this answer attaches to. */
+  focusNote?: string;
   keyVariables: KeyVariable[];
   givenData: string[];
   steps: SolutionStep[];
@@ -118,6 +122,8 @@ export function parseMathAnalysisResponse(
       detectedText: parsed.detectedText || "Mathematical Expression",
       targetCoordinates: parsed.targetCoordinates || coordinates,
       summary: parsed.summary || "Step-by-step breakdown of the detected problem.",
+      updateMode: "append",
+      focusNote: parsed.focusNote ? String(parsed.focusNote) : undefined,
       keyVariables: Array.isArray(parsed.keyVariables)
         ? parsed.keyVariables.map((v: any) => ({
             symbol: cleanLatex(v.symbol || "x"),

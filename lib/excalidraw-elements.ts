@@ -4,6 +4,7 @@
  */
 
 import type { AiCanvasElement } from "./math-parser";
+import { stampAiProvenance } from "./canvas-provenance";
 
 export type ExcalidrawElement = Record<string, unknown>;
 
@@ -13,12 +14,20 @@ export interface ExcalidrawAPILike {
   scrollToContent?: (target?: unknown) => void;
 }
 
+export interface AiBuildOptions {
+  sessionId?: string;
+  role?: string;
+}
+
 function randId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function baseProps(overrides: Partial<ExcalidrawElement> = {}): ExcalidrawElement {
-  return {
+function baseProps(
+  overrides: Partial<ExcalidrawElement> = {},
+  provenance?: AiBuildOptions & { index?: number }
+): ExcalidrawElement {
+  const base: ExcalidrawElement = {
     angle: 0,
     strokeWidth: 2,
     strokeStyle: "solid",
@@ -36,17 +45,24 @@ function baseProps(overrides: Partial<ExcalidrawElement> = {}): ExcalidrawElemen
     isDeleted: false,
     ...overrides,
   };
+  return stampAiProvenance(base, {
+    sessionId: provenance?.sessionId,
+    role: provenance?.role || "explanation",
+    index: provenance?.index,
+  }) as ExcalidrawElement;
 }
 
 /** Build one or more Excalidraw elements from a single AI drawing instruction. */
 export function aiElementToExcalidraw(
   item: AiCanvasElement,
-  index = 0
+  index = 0,
+  opts: AiBuildOptions = {}
 ): ExcalidrawElement[] {
   const baseId = randId(`ai-${item.type}-${index}`);
   const strokeColor = item.strokeColor || "#6366f1";
   const backgroundColor = item.backgroundColor || "transparent";
   const fillStyle = item.fillStyle || "hachure";
+  const provenance = { ...opts, index };
   const elements: ExcalidrawElement[] = [];
 
   if (item.type === "freedraw" && item.points && item.points.length > 0) {
@@ -59,23 +75,26 @@ export function aiElementToExcalidraw(
     const maxY = Math.max(...ys);
 
     elements.push(
-      baseProps({
-        id: baseId,
-        type: "freedraw",
-        x: item.x + minX,
-        y: item.y + minY,
-        width: Math.max(1, maxX - minX),
-        height: Math.max(1, maxY - minY),
-        strokeColor,
-        backgroundColor: "transparent",
-        fillStyle: "solid",
-        strokeWidth: item.strokeWidth || 2.5,
-        roundness: null,
-        points: pts.map((p) => [p[0] - minX, p[1] - minY]),
-        pressures: pts.map(() => 0.5),
-        simulatePressure: true,
-        lastCommittedPoint: null,
-      })
+      baseProps(
+        {
+          id: baseId,
+          type: "freedraw",
+          x: item.x + minX,
+          y: item.y + minY,
+          width: Math.max(1, maxX - minX),
+          height: Math.max(1, maxY - minY),
+          strokeColor,
+          backgroundColor: "transparent",
+          fillStyle: "solid",
+          strokeWidth: item.strokeWidth || 2.5,
+          roundness: null,
+          points: pts.map((p) => [p[0] - minX, p[1] - minY]),
+          pressures: pts.map(() => 0.5),
+          simulatePressure: true,
+          lastCommittedPoint: null,
+        },
+        provenance
+      )
     );
     return elements;
   }
@@ -84,31 +103,34 @@ export function aiElementToExcalidraw(
     const w = item.width ?? 120;
     const h = item.height ?? 0;
     elements.push(
-      baseProps({
-        id: baseId,
-        type: item.type === "line" ? "line" : "arrow",
-        x: item.x,
-        y: item.y,
-        width: Math.abs(w),
-        height: Math.abs(h),
-        strokeColor,
-        backgroundColor: "transparent",
-        fillStyle: "hachure",
-        strokeWidth: item.strokeWidth || 2,
-        strokeStyle: item.strokeStyle || "solid",
-        roundness: { type: 2 },
-        points: item.points?.length
-          ? item.points.map((p) => [p[0], p[1]])
-          : [
-              [0, 0],
-              [w, h],
-            ],
-        startBinding: null,
-        endBinding: null,
-        startArrowhead: null,
-        endArrowhead: item.type === "arrow" ? "arrow" : null,
-        lastCommittedPoint: null,
-      })
+      baseProps(
+        {
+          id: baseId,
+          type: item.type === "line" ? "line" : "arrow",
+          x: item.x,
+          y: item.y,
+          width: Math.abs(w),
+          height: Math.abs(h),
+          strokeColor,
+          backgroundColor: "transparent",
+          fillStyle: "hachure",
+          strokeWidth: item.strokeWidth || 2,
+          strokeStyle: item.strokeStyle || "solid",
+          roundness: { type: 2 },
+          points: item.points?.length
+            ? item.points.map((p) => [p[0], p[1]])
+            : [
+                [0, 0],
+                [w, h],
+              ],
+          startBinding: null,
+          endBinding: null,
+          startArrowhead: null,
+          endArrowhead: item.type === "arrow" ? "arrow" : null,
+          lastCommittedPoint: null,
+        },
+        provenance
+      )
     );
     return elements;
   }
@@ -116,28 +138,31 @@ export function aiElementToExcalidraw(
   if (item.type === "text") {
     const text = item.text || item.label || "";
     elements.push(
-      baseProps({
-        id: baseId,
-        type: "text",
-        x: item.x,
-        y: item.y,
-        width: item.width || 200,
-        height: item.height || 40,
-        strokeColor: strokeColor === "#6366f1" ? "#1e1b4b" : strokeColor,
-        backgroundColor: "transparent",
-        fillStyle: "hachure",
-        strokeWidth: 1,
-        roundness: null,
-        text,
-        fontSize: item.fontSize || 16,
-        fontFamily: 1,
-        textAlign: "left",
-        verticalAlign: "top",
-        containerId: null,
-        originalText: text,
-        autoResize: true,
-        lineHeight: 1.25,
-      })
+      baseProps(
+        {
+          id: baseId,
+          type: "text",
+          x: item.x,
+          y: item.y,
+          width: item.width || 200,
+          height: item.height || 40,
+          strokeColor: strokeColor === "#6366f1" ? "#1e1b4b" : strokeColor,
+          backgroundColor: "transparent",
+          fillStyle: "hachure",
+          strokeWidth: 1,
+          roundness: null,
+          text,
+          fontSize: item.fontSize || 16,
+          fontFamily: 1,
+          textAlign: "left",
+          verticalAlign: "top",
+          containerId: null,
+          originalText: text,
+          autoResize: true,
+          lineHeight: 1.25,
+        },
+        provenance
+      )
     );
     return elements;
   }
@@ -147,49 +172,55 @@ export function aiElementToExcalidraw(
     item.type === "diamond" || item.type === "ellipse" ? item.type : "rectangle";
 
   elements.push(
-    baseProps({
-      id: baseId,
-      type: shapeType,
-      x: item.x,
-      y: item.y,
-      width: item.width || 200,
-      height: item.height || 120,
-      strokeColor,
-      backgroundColor:
-        backgroundColor === "transparent" && shapeType === "rectangle"
-          ? "#e0e7ff"
-          : backgroundColor,
-      fillStyle,
-      strokeWidth: item.strokeWidth || 2,
-      roundness: shapeType === "ellipse" ? null : { type: 3 },
-    })
+    baseProps(
+      {
+        id: baseId,
+        type: shapeType,
+        x: item.x,
+        y: item.y,
+        width: item.width || 200,
+        height: item.height || 120,
+        strokeColor,
+        backgroundColor:
+          backgroundColor === "transparent" && shapeType === "rectangle"
+            ? "#e0e7ff"
+            : backgroundColor,
+        fillStyle,
+        strokeWidth: item.strokeWidth || 2,
+        roundness: shapeType === "ellipse" ? null : { type: 3 },
+      },
+      provenance
+    )
   );
 
   if (item.text) {
     const textId = randId(`ai-text-${index}`);
     elements.push(
-      baseProps({
-        id: textId,
-        type: "text",
-        x: item.x + 14,
-        y: item.y + 14,
-        width: Math.max(40, (item.width || 200) - 28),
-        height: Math.max(24, (item.height || 120) - 28),
-        strokeColor: "#1e1b4b",
-        backgroundColor: "transparent",
-        fillStyle: "hachure",
-        strokeWidth: 1,
-        roundness: null,
-        text: item.text,
-        fontSize: item.fontSize || 15,
-        fontFamily: 1,
-        textAlign: "left",
-        verticalAlign: "top",
-        containerId: baseId,
-        originalText: item.text,
-        autoResize: false,
-        lineHeight: 1.25,
-      })
+      baseProps(
+        {
+          id: textId,
+          type: "text",
+          x: item.x + 14,
+          y: item.y + 14,
+          width: Math.max(40, (item.width || 200) - 28),
+          height: Math.max(24, (item.height || 120) - 28),
+          strokeColor: "#1e1b4b",
+          backgroundColor: "transparent",
+          fillStyle: "hachure",
+          strokeWidth: 1,
+          roundness: null,
+          text: item.text,
+          fontSize: item.fontSize || 15,
+          fontFamily: 1,
+          textAlign: "left",
+          verticalAlign: "top",
+          containerId: baseId,
+          originalText: item.text,
+          autoResize: false,
+          lineHeight: 1.25,
+        },
+        provenance
+      )
     );
   }
 

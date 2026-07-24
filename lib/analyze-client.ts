@@ -1,4 +1,5 @@
 import type { MathAnalysisResult, AiCanvasElement, CanvasCoordinates } from "./math-parser";
+import type { AnalysisMode } from "./prompts/whiteboard-professor";
 
 export type ClientStreamEvent =
   | { type: "status"; message: string }
@@ -12,6 +13,11 @@ export interface AnalyzeStreamParams {
   promptText?: string;
   userApiKey?: string;
   existingElementsSummary?: string;
+  freeSpaceHints?: string;
+  selectionSummary?: string;
+  suggestedPlacement?: CanvasCoordinates;
+  conversationSnippet?: string;
+  mode?: AnalysisMode;
   signal?: AbortSignal;
   onEvent: (event: ClientStreamEvent) => void | Promise<void>;
 }
@@ -36,6 +42,11 @@ export async function streamAnalyze(
       promptText: params.promptText,
       userApiKey: params.userApiKey,
       existingElementsSummary: params.existingElementsSummary,
+      freeSpaceHints: params.freeSpaceHints,
+      selectionSummary: params.selectionSummary,
+      suggestedPlacement: params.suggestedPlacement,
+      conversationSnippet: params.conversationSnippet,
+      mode: params.mode,
       stream: true,
     }),
     signal: params.signal,
@@ -48,7 +59,6 @@ export async function streamAnalyze(
     const json = await res.json();
     if (json.success && json.data) {
       const data = json.data as MathAnalysisResult;
-      // Emit drawings sequentially for progressive UX even on fallback
       if (data.canvasDrawings) {
         for (let i = 0; i < data.canvasDrawings.length; i++) {
           await params.onEvent({

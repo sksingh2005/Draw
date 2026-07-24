@@ -3,6 +3,7 @@ import {
   analyzeCanvasContent,
   streamAnalyzeCanvasContent,
   type AnalyzeStreamEvent,
+  type AnalyzeParams,
 } from "@/lib/ai";
 
 export const runtime = "nodejs";
@@ -21,29 +22,29 @@ function encodeSse(event: AnalyzeStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
+function parseBody(body: any, headerKey: string | null): AnalyzeParams {
+  const userApiKey = body.userApiKey || headerKey || undefined;
+  const defaultCoords = { x: 150, y: 150, width: 300, height: 200 };
+
+  return {
+    imageBase64: body.imageBase64,
+    coordinates: body.coordinates || defaultCoords,
+    promptText: body.promptText,
+    userApiKey,
+    existingElementsSummary: body.existingElementsSummary,
+    freeSpaceHints: body.freeSpaceHints,
+    selectionSummary: body.selectionSummary,
+    suggestedPlacement: body.suggestedPlacement,
+    conversationSnippet: body.conversationSnippet,
+    mode: body.mode,
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
-      imageBase64,
-      coordinates,
-      promptText,
-      userApiKey: bodyKey,
-      existingElementsSummary,
-    } = body;
     const headerKey = req.headers.get("x-gemini-api-key");
-    const userApiKey = bodyKey || headerKey || undefined;
-
-    const defaultCoords = { x: 150, y: 150, width: 300, height: 200 };
-    const targetCoordinates = coordinates || defaultCoords;
-
-    const params = {
-      imageBase64,
-      coordinates: targetCoordinates,
-      promptText,
-      userApiKey,
-      existingElementsSummary,
-    };
+    const params = parseBody(body, headerKey);
 
     // ── Realtime SSE path: stream draw events as Gemini generates JSON ──
     if (wantsStream(req, body)) {
