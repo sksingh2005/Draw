@@ -7,6 +7,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ExcalidrawCanvas, ExcalidrawImperativeAPI } from "@/components/canvas/ExcalidrawCanvas";
 import { MathPresetLibrary, MathTemplate } from "@/components/math/MathPresetLibrary";
 import { SolutionPanel } from "@/components/canvas/SolutionPanel";
+import { ApiKeyModal } from "@/components/layout/ApiKeyModal";
 import { MathAnalysisResult } from "@/lib/math-parser";
 import { Button } from "@/components/ui/button";
 import { Sparkles, BookOpen } from "lucide-react";
@@ -29,10 +30,12 @@ export default function Home() {
   const [activePageId, setActivePageIdState] = useState<string>("page-default-math");
   const [activePage, setActivePage] = useState<WorkspacePage | null>(null);
 
-  // Layout UI Toggles
+  // Layout UI Toggles & Modals
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(true);
   const [isCanvasMaximized, setIsCanvasMaximized] = useState<boolean>(false);
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
+  const [userApiKey, setUserApiKey] = useState<string>("");
 
   // Canvas elements & Chat state
   const [excalidrawElements, setExcalidrawElements] = useState<readonly any[]>([]);
@@ -44,7 +47,7 @@ export default function Home() {
   const [isPanelOpen, setIsPanelOpen] = useState<boolean>(false);
   const [presetLibraryOpen, setPresetLibraryOpen] = useState<boolean>(false);
 
-  // Load initial pages
+  // Load initial pages & API key
   useEffect(() => {
     const loadedPages = getSavedPages();
     setPages(loadedPages);
@@ -53,10 +56,18 @@ export default function Home() {
     if (current) {
       setActivePageIdState(current.id);
       setActivePage(current);
-      setExcalidrawElements(current.strokes as any || []);
+      setExcalidrawElements((current.strokes as any) || []);
       setMessages(current.messages || []);
     }
+
+    const savedKey = localStorage.getItem("gemini_api_key") || "";
+    setUserApiKey(savedKey);
   }, []);
+
+  const handleSaveApiKey = (key: string) => {
+    setUserApiKey(key);
+    localStorage.setItem("gemini_api_key", key);
+  };
 
   // Save workspace state
   useEffect(() => {
@@ -140,16 +151,25 @@ export default function Home() {
   const handleAnalyzeCanvas = async () => {
     if (isAnalyzing) return;
 
+    if (!userApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+      setApiKeyModalOpen(true);
+      return;
+    }
+
     setIsAnalyzing(true);
     const imageBase64 = await exportExcalidrawSnapshot();
 
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-gemini-api-key": userApiKey,
+        },
         body: JSON.stringify({
           imageBase64: imageBase64 || undefined,
           coordinates: { x: 100, y: 100, width: 400, height: 300 },
+          userApiKey,
         }),
       });
 
@@ -169,9 +189,13 @@ export default function Home() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
         insertAiExplanationOnCanvas(resultData);
+      } else if (json.error) {
+        alert(`Gemini AI Error: ${json.error}`);
+        setApiKeyModalOpen(true);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to analyze Excalidraw canvas:", err);
+      alert(`Gemini API error: ${err.message || err}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -228,6 +252,11 @@ export default function Home() {
 
   // Send Text Question in Right Chat Panel
   const handleSendChatMessage = async (text: string, imageCrop?: string) => {
+    if (!userApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+      setApiKeyModalOpen(true);
+      return;
+    }
+
     let finalCrop = imageCrop;
     if (!finalCrop) {
       finalCrop = (await exportExcalidrawSnapshot()) || undefined;
@@ -247,11 +276,15 @@ export default function Home() {
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-gemini-api-key": userApiKey,
+        },
         body: JSON.stringify({
           imageBase64: finalCrop,
           coordinates: { x: 150, y: 150, width: 300, height: 200 },
           promptText: text,
+          userApiKey,
         }),
       });
 
@@ -268,9 +301,13 @@ export default function Home() {
         setMessages((prev) => [...prev, assistantMsg]);
         setCurrentResult(resultData);
         insertAiExplanationOnCanvas(resultData);
+      } else if (json.error) {
+        alert(`Gemini AI Error: ${json.error}`);
+        setApiKeyModalOpen(true);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Chat analysis failed:", err);
+      alert(`Chat analysis error: ${err.message || err}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -347,6 +384,8 @@ export default function Home() {
           link.href = crop;
           link.click();
         }}
+        onOpenApiKeyModal={() => setApiKeyModalOpen(true)}
+        hasApiKey={Boolean(userApiKey)}
         analysisCount={messages.length}
       />
 
@@ -407,6 +446,14 @@ export default function Home() {
             onOpenChange={setPresetLibraryOpen}
             onSelectTemplate={handleSelectTemplate}
           />
+
+          {/* Gemini API Key Configuration Modal */}
+          <ApiKeyModal
+            open={apiKeyModalOpen}
+            onOpenChange={setApiKeyModalOpen}
+            onSaveKey={handleSaveApiKey}
+            currentKey={userApiKey}
+          />
         </main>
 
         {/* Right LLM Chat & Analysis Panel */}
@@ -415,7 +462,6 @@ export default function Home() {
             messages={messages}
             onSendMessage={handleSendChatMessage}
             onAttachCanvasCrop={() => {
-              // Synchronous fallback preview trigger
               exportExcalidrawSnapshot().then((crop) => {
                 if (crop) handleSendChatMessage("", crop);
               });

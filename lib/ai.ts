@@ -3,38 +3,34 @@ import {
   MathAnalysisResult,
   CanvasCoordinates,
   parseMathAnalysisResponse,
-  createFallbackResult,
 } from "./math-parser";
 
 /**
- * Perform spatial AI analysis on a cropped canvas image and/or equation query
+ * Perform real spatial AI analysis on a cropped canvas image and/or equation query using Gemini 2.5 Flash
  */
 export async function analyzeCanvasContent(params: {
   imageBase64?: string;
   coordinates: CanvasCoordinates;
   promptText?: string;
+  userApiKey?: string;
 }): Promise<MathAnalysisResult> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  const apiKey =
+    params.userApiKey ||
+    process.env.GEMINI_API_KEY ||
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
-  // If no Gemini API key is configured, fallback immediately to local solver engine
-  if (!apiKey) {
-    console.log("No GEMINI_API_KEY detected. Using intelligent local solver engine.");
-    // Simulate short network delay for smooth UX loading state
-    await new Promise((res) => setTimeout(res, 800));
-    return createFallbackResult(
-      params.promptText || "Handwritten Math Equation",
-      params.coordinates,
-      `sol-${Date.now()}`
+  if (!apiKey || apiKey.trim() === "") {
+    throw new Error(
+      "Gemini API Key missing! Please click '🔑 Connect Gemini Key' in the top navbar to enter your Gemini API key from Google AI Studio."
     );
   }
 
-  try {
-    const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: apiKey.trim() });
 
-    const systemInstruction = `You are an elite AI Mathematics & Physics Professor analyzing an interactive canvas selection at specific spatial coordinates.
+  const systemInstruction = `You are an elite AI Mathematics, Science, and Logic Professor analyzing an interactive whiteboard canvas.
 Examine the provided canvas cropped image and/or text query.
 
-You MUST respond strictly with valid raw JSON (no additional chat commentary) matching this schema:
+You MUST respond strictly with valid raw JSON (no markdown formatting or chat commentary outside JSON) matching this schema:
 {
   "classification": "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph",
   "latexFormula": "string in raw LaTeX e.g. x^2 - 5x + 6 = 0",
@@ -77,42 +73,33 @@ You MUST respond strictly with valid raw JSON (no additional chat commentary) ma
   ]
 }`;
 
-    const contents: any[] = [];
+  const contents: any[] = [];
 
-    // Add image payload if present
-    if (params.imageBase64) {
-      const base64Data = params.imageBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
-      contents.push({
-        inlineData: {
-          mimeType: "image/png",
-          data: base64Data,
-        },
-      });
-    }
-
-    const userPrompt = `Spatial Canvas Coordinates: [x:${params.coordinates.x}, y:${params.coordinates.y}, width:${params.coordinates.width}, height:${params.coordinates.height}]
-${params.promptText ? `User Question / Context: "${params.promptText}"` : "Please analyze the drawn mathematical equation / problem in the canvas crop image."}`;
-
-    contents.push({ text: userPrompt });
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        temperature: 0.2,
+  if (params.imageBase64) {
+    const base64Data = params.imageBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
+    contents.push({
+      inlineData: {
+        mimeType: "image/png",
+        data: base64Data,
       },
     });
-
-    const textOutput = response.text || "";
-    return parseMathAnalysisResponse(textOutput, params.coordinates);
-  } catch (error) {
-    console.error("Gemini API call failed, invoking intelligent local fallback solver:", error);
-    return createFallbackResult(
-      params.promptText || "Handwritten Math Equation",
-      params.coordinates,
-      `sol-${Date.now()}`
-    );
   }
+
+  const userPrompt = `Spatial Canvas Coordinates: [x:${params.coordinates.x}, y:${params.coordinates.y}, width:${params.coordinates.width}, height:${params.coordinates.height}]
+${params.promptText ? `User Question / Context: "${params.promptText}"` : "Please analyze the drawn mathematical equation / problem in the canvas crop image."}`;
+
+  contents.push({ text: userPrompt });
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: "application/json",
+      temperature: 0.2,
+    },
+  });
+
+  const textOutput = response.text || "";
+  return parseMathAnalysisResponse(textOutput, params.coordinates);
 }

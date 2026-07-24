@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Maximize2,
   Minimize2,
+  Key,
 } from "lucide-react";
 
 interface NavbarProps {
@@ -24,6 +25,8 @@ interface NavbarProps {
   onOpenPresets: () => void;
   onClearCanvas: () => void;
   onExportCanvas: () => void;
+  onOpenApiKeyModal: () => void;
+  hasApiKey: boolean;
   analysisCount: number;
 }
 
@@ -36,6 +39,8 @@ export function Navbar({
   onOpenPresets,
   onClearCanvas,
   onExportCanvas,
+  onOpenApiKeyModal,
+  hasApiKey,
   analysisCount,
 }: NavbarProps) {
   return (
@@ -73,14 +78,29 @@ export function Navbar({
       {/* Center AI Engine Status */}
       <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-muted/60 border text-xs text-muted-foreground">
         <Cpu className="w-3.5 h-3.5 text-indigo-500" />
-        <span>Spatial Engine:</span>
+        <span>Gemini Engine:</span>
         <span className="font-semibold text-foreground flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Active
+          <span className={`w-2 h-2 rounded-full ${hasApiKey ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
+          {hasApiKey ? "Gemini 2.5 Active" : "Key Needed"}
         </span>
       </div>
 
       {/* Right Quick Actions */}
       <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onOpenApiKeyModal}
+          className={`rounded-xl text-xs gap-1.5 border-indigo-500/30 ${
+            hasApiKey
+              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              : "bg-amber-500/10 text-amber-600 dark:text-amber-400 animate-pulse"
+          }`}
+        >
+          <Key className="w-3.5 h-3.5" />
+          {hasApiKey ? "Gemini Connected" : "Connect Key"}
+        </Button>
+
         <Button variant="outline" size="sm" onClick={onOpenPresets} className="rounded-xl text-xs gap-1.5 hidden sm:flex">
           <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Formulas
         </Button>
