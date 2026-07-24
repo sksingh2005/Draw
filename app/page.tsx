@@ -168,12 +168,62 @@ export default function Home() {
           timestamp: Date.now(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
+        insertAiExplanationOnCanvas(resultData);
       }
     } catch (err) {
       console.error("Failed to analyze Excalidraw canvas:", err);
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  // Helper to place AI explanation node directly on Excalidraw Canvas
+  const insertAiExplanationOnCanvas = (result: MathAnalysisResult) => {
+    if (!excalidrawAPI) return;
+    const currentElems = excalidrawAPI.getSceneElements();
+
+    const stepsText = result.steps
+      .slice(0, 3)
+      .map((s) => `${s.stepNumber}. ${s.title}`)
+      .join("\n");
+
+    const fullNoteText = `✨ AI Analysis:\n${result.summary}\n\nSteps:\n${stepsText}`;
+
+    const aiTextElem = {
+      id: `ai-note-${Date.now()}`,
+      type: "text",
+      x: 350 + Math.random() * 40,
+      y: 180 + Math.random() * 40,
+      width: 300,
+      height: 100,
+      angle: 0,
+      strokeColor: "#6366f1",
+      backgroundColor: "transparent",
+      fillStyle: "hachure",
+      strokeWidth: 2,
+      strokeStyle: "solid",
+      roughness: 1,
+      opacity: 100,
+      groupIds: [],
+      frameId: null,
+      roundness: null,
+      seed: Math.floor(Math.random() * 100000),
+      version: 1,
+      versionNonce: Math.floor(Math.random() * 100000),
+      isDeleted: false,
+      text: fullNoteText,
+      fontSize: 16,
+      fontFamily: 1,
+      textAlign: "left",
+      verticalAlign: "top",
+      containerId: null,
+      originalText: fullNoteText,
+      lineHeight: 1.25,
+    };
+
+    const updated = [...currentElems, aiTextElem];
+    excalidrawAPI.updateScene({ elements: updated as any });
+    setExcalidrawElements(updated);
   };
 
   // Send Text Question in Right Chat Panel
@@ -217,6 +267,7 @@ export default function Home() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
         setCurrentResult(resultData);
+        insertAiExplanationOnCanvas(resultData);
       }
     } catch (err) {
       console.error("Chat analysis failed:", err);
