@@ -1,15 +1,15 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
-import { MathCanvas, MathCanvasRef, CanvasNoteNode, CanvasStroke } from "@/components/canvas/MathCanvas";
-import { CanvasToolbar, CanvasToolMode, GridMode } from "@/components/canvas/CanvasToolbar";
+import { ExcalidrawCanvas, ExcalidrawImperativeAPI } from "@/components/canvas/ExcalidrawCanvas";
 import { MathPresetLibrary, MathTemplate } from "@/components/math/MathPresetLibrary";
 import { SolutionPanel } from "@/components/canvas/SolutionPanel";
-import { NodeCard } from "@/components/canvas/NodeCard";
-import { MathAnalysisResult, CanvasCoordinates } from "@/lib/math-parser";
+import { MathAnalysisResult } from "@/lib/math-parser";
+import { Button } from "@/components/ui/button";
+import { Sparkles, BookOpen } from "lucide-react";
 import {
   WorkspacePage,
   ChatMessage,
@@ -22,7 +22,7 @@ import {
 } from "@/lib/workspace-store";
 
 export default function Home() {
-  const canvasRef = useRef<MathCanvasRef | null>(null);
+  const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawImperativeAPI | null>(null);
 
   // Multi-page Workspace state
   const [pages, setPages] = useState<WorkspacePage[]>([]);
@@ -34,18 +34,8 @@ export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState<boolean>(true);
   const [isCanvasMaximized, setIsCanvasMaximized] = useState<boolean>(false);
 
-  // Canvas tool states
-  const [toolMode, setToolMode] = useState<CanvasToolMode>("pan");
-  const [strokeColor, setStrokeColor] = useState<string>("#6366f1");
-  const [strokeWidth, setStrokeWidth] = useState<number>(4);
-  const [gridMode, setGridMode] = useState<GridMode>("graph");
-
-  // Viewport & Canvas state
-  const [zoom, setZoom] = useState<number>(1);
-  const [panX, setPanX] = useState<number>(0);
-  const [panY, setPanY] = useState<number>(0);
-  const [strokes, setStrokes] = useState<CanvasStroke[]>([]);
-  const [noteNodes, setNoteNodes] = useState<CanvasNoteNode[]>([]);
+  // Canvas elements & Chat state
+  const [excalidrawElements, setExcalidrawElements] = useState<readonly any[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   // AI Analysis state
@@ -63,8 +53,7 @@ export default function Home() {
     if (current) {
       setActivePageIdState(current.id);
       setActivePage(current);
-      setStrokes(current.strokes || []);
-      setNoteNodes(current.noteNodes || []);
+      setExcalidrawElements(current.strokes as any || []);
       setMessages(current.messages || []);
     }
   }, []);
@@ -74,13 +63,12 @@ export default function Home() {
     if (!activePage) return;
     const updatedPage: WorkspacePage = {
       ...activePage,
-      strokes,
-      noteNodes,
+      strokes: excalidrawElements as any,
       messages,
       updatedAt: Date.now(),
     };
     savePage(updatedPage);
-  }, [strokes, noteNodes, messages, activePage]);
+  }, [excalidrawElements, messages, activePage]);
 
   // Switch Workspace Page
   const handleSelectPage = (id: string) => {
@@ -89,18 +77,22 @@ export default function Home() {
     const target = pages.find((p) => p.id === id);
     if (target) {
       setActivePage(target);
-      setStrokes(target.strokes || []);
-      setNoteNodes(target.noteNodes || []);
+      const newElements = (target.strokes as any) || [];
+      setExcalidrawElements(newElements);
       setMessages(target.messages || []);
       setCurrentResult(null);
       setIsPanelOpen(false);
+
+      if (excalidrawAPI) {
+        excalidrawAPI.updateScene({ elements: newElements });
+      }
     }
   };
 
   // Create New Workspace Page
   const handleCreateNewPage = (category: WorkspacePage["category"] = "general") => {
     const count = pages.length + 1;
-    const newP = createNewPage(`Canvas Workspace ${count}`, category);
+    const newP = createNewPage(`Excalidraw Workspace ${count}`, category);
     setPages(getSavedPages());
     handleSelectPage(newP.id);
   };
@@ -114,20 +106,50 @@ export default function Home() {
     }
   };
 
+  // Export Excalidraw Scene Snapshot as Base64 Data URL
+  const exportExcalidrawSnapshot = async (): Promise<string | null> => {
+    if (!excalidrawAPI) return null;
+    try {
+      const elements = excalidrawAPI.getSceneElements();
+      if (!elements || elements.length === 0) return null;
+
+      const mod = await import("@excalidraw/excalidraw");
+      const blob = await mod.exportToBlob({
+        elements,
+        appState: {
+          ...excalidrawAPI.getAppState(),
+          exportWithBackground: true,
+          viewBackgroundColor: "#ffffff",
+        },
+        files: excalidrawAPI.getFiles(),
+        mimeType: "image/png",
+      });
+
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    } catch (err) {
+      console.warn("Failed to export Excalidraw snapshot blob:", err);
+      return null;
+    }
+  };
+
   // Trigger Canvas Spatial AI Analysis
   const handleAnalyzeCanvas = async () => {
-    if (!canvasRef.current || isAnalyzing) return;
+    if (isAnalyzing) return;
 
     setIsAnalyzing(true);
-    const region = canvasRef.current.getCroppedRegion();
+    const imageBase64 = await exportExcalidrawSnapshot();
 
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: region?.imageBase64,
-          coordinates: region?.coordinates || { x: 100, y: 100, width: 350, height: 250 },
+          imageBase64: imageBase64 || undefined,
+          coordinates: { x: 100, y: 100, width: 400, height: 300 },
         }),
       });
 
@@ -140,15 +162,15 @@ export default function Home() {
         const assistantMsg: ChatMessage = {
           id: `msg-${Date.now()}`,
           sender: "assistant",
-          text: `Analyzed canvas crop: **${resultData.summary}**`,
-          imageCrop: region?.imageBase64,
+          text: `Analyzed Excalidraw canvas: **${resultData.summary}**`,
+          imageCrop: imageBase64 || undefined,
           analysisResult: resultData,
           timestamp: Date.now(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
       }
     } catch (err) {
-      console.error("Failed to analyze canvas region:", err);
+      console.error("Failed to analyze Excalidraw canvas:", err);
     } finally {
       setIsAnalyzing(false);
     }
@@ -156,11 +178,16 @@ export default function Home() {
 
   // Send Text Question in Right Chat Panel
   const handleSendChatMessage = async (text: string, imageCrop?: string) => {
+    let finalCrop = imageCrop;
+    if (!finalCrop) {
+      finalCrop = (await exportExcalidrawSnapshot()) || undefined;
+    }
+
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: "user",
       text,
-      imageCrop,
+      imageCrop: finalCrop,
       timestamp: Date.now(),
     };
 
@@ -172,7 +199,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: imageCrop,
+          imageBase64: finalCrop,
           coordinates: { x: 150, y: 150, width: 300, height: 200 },
           promptText: text,
         }),
@@ -198,33 +225,54 @@ export default function Home() {
     }
   };
 
-  // Insert Formula Preset
+  // Insert Formula Preset into Excalidraw Scene
   const handleSelectTemplate = (template: MathTemplate) => {
-    const newNode: CanvasNoteNode = {
-      id: `node-${Date.now()}`,
-      x: 180 + Math.random() * 60,
-      y: 140 + Math.random() * 40,
-      text: template.name,
-      latex: template.latex,
-    };
-    setNoteNodes((prev) => [...prev, newNode]);
-  };
+    if (!excalidrawAPI) return;
+    const currentElems = excalidrawAPI.getSceneElements();
 
-  // Export PNG
-  const handleExportCanvas = () => {
-    const region = canvasRef.current?.getCroppedRegion();
-    if (!region) return;
-    const link = document.createElement("a");
-    link.download = `workspace-${activePage?.title || "canvas"}-${Date.now()}.png`;
-    link.href = region.imageBase64;
-    link.click();
+    const newTextElement = {
+      id: `elem-${Date.now()}`,
+      type: "text",
+      x: 200 + Math.random() * 80,
+      y: 180 + Math.random() * 60,
+      width: 260,
+      height: 40,
+      angle: 0,
+      strokeColor: "#6366f1",
+      backgroundColor: "transparent",
+      fillStyle: "hachure",
+      strokeWidth: 2,
+      strokeStyle: "solid",
+      roughness: 1,
+      opacity: 100,
+      groupIds: [],
+      frameId: null,
+      roundness: null,
+      seed: Math.floor(Math.random() * 100000),
+      version: 1,
+      versionNonce: Math.floor(Math.random() * 100000),
+      isDeleted: false,
+      text: `${template.name}\n${template.latex}`,
+      fontSize: 20,
+      fontFamily: 1,
+      textAlign: "center",
+      verticalAlign: "middle",
+      containerId: null,
+      originalText: `${template.name}\n${template.latex}`,
+      lineHeight: 1.25,
+    };
+
+    const updated = [...currentElems, newTextElement];
+    excalidrawAPI.updateScene({ elements: updated as any });
+    setExcalidrawElements(updated);
   };
 
   // Clear Canvas
   const handleClearAll = () => {
-    canvasRef.current?.clearCanvas();
-    setStrokes([]);
-    setNoteNodes([]);
+    if (excalidrawAPI) {
+      excalidrawAPI.resetScene();
+    }
+    setExcalidrawElements([]);
     setCurrentResult(null);
     setIsPanelOpen(false);
   };
@@ -233,18 +281,25 @@ export default function Home() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background font-sans">
       {/* Top Navbar */}
       <Navbar
-        activeTitle={activePage?.title || "AI Whiteboard Workspace"}
+        activeTitle={activePage?.title || "Excalidraw AI Workspace"}
         isMaximized={isCanvasMaximized}
         onToggleMaximize={() => setIsCanvasMaximized((prev) => !prev)}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         onToggleChat={() => setIsChatOpen((prev) => !prev)}
         onOpenPresets={() => setPresetLibraryOpen(true)}
         onClearCanvas={handleClearAll}
-        onExportCanvas={handleExportCanvas}
+        onExportCanvas={async () => {
+          const crop = await exportExcalidrawSnapshot();
+          if (!crop) return;
+          const link = document.createElement("a");
+          link.download = `excalidraw-${Date.now()}.png`;
+          link.href = crop;
+          link.click();
+        }}
         analysisCount={messages.length}
       />
 
-      {/* Main Responsive Layout */}
+      {/* Main 3-Pane Responsive Layout */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Left Sidebar: Pages & History */}
         {!isCanvasMaximized && (
@@ -259,64 +314,34 @@ export default function Home() {
           />
         )}
 
-        {/* Center Infinite Canvas Work Area */}
+        {/* Center Excalidraw Engine Viewport */}
         <main className="flex-1 relative w-full h-full overflow-hidden flex flex-col">
-          <MathCanvas
-            refCanvasApi={canvasRef}
-            toolMode={toolMode}
-            strokeColor={strokeColor}
-            strokeWidth={strokeWidth}
-            gridMode={gridMode}
-            zoom={zoom}
-            panX={panX}
-            panY={panY}
-            onPanChange={(px, py) => {
-              setPanX(px);
-              setPanY(py);
-            }}
-            onZoomChange={setZoom}
-            noteNodes={noteNodes}
-            onAddNoteNode={(newNode) => setNoteNodes((prev) => [...prev, newNode])}
-            strokes={strokes}
-            setStrokes={setStrokes}
+          <ExcalidrawCanvas
+            onApiReady={(api) => setExcalidrawAPI(api)}
+            onElementsChange={(elems) => setExcalidrawElements(elems)}
+            initialElements={excalidrawElements}
           />
 
-          {/* Canvas Spatial Anchored Node Card */}
-          {currentResult && !isPanelOpen && (
-            <NodeCard
-              result={currentResult}
-              onExpandPanel={() => setIsPanelOpen(true)}
-              onClose={() => setCurrentResult(null)}
-            />
-          )}
+          {/* Floating AI Actions Dock */}
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 p-2 rounded-2xl border bg-background/90 backdrop-blur-xl shadow-2xl">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPresetLibraryOpen(true)}
+              className="rounded-xl text-xs gap-1.5"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Formulas
+            </Button>
 
-          {/* Floating Glassmorphism Toolbar */}
-          <CanvasToolbar
-            toolMode={toolMode}
-            onToolModeChange={setToolMode}
-            strokeColor={strokeColor}
-            onStrokeColorChange={setStrokeColor}
-            strokeWidth={strokeWidth}
-            onStrokeWidthChange={setStrokeWidth}
-            gridMode={gridMode}
-            onGridModeChange={setGridMode}
-            zoom={zoom}
-            onZoomIn={() => setZoom((prev) => Math.min(prev + 0.15, 4))}
-            onZoomOut={() => setZoom((prev) => Math.max(prev - 0.15, 0.2))}
-            onResetZoom={() => {
-              setZoom(1);
-              setPanX(0);
-              setPanY(0);
-            }}
-            canUndo={canvasRef.current?.canUndo || false}
-            canRedo={canvasRef.current?.canRedo || false}
-            onUndo={() => canvasRef.current?.undo()}
-            onRedo={() => canvasRef.current?.redo()}
-            onClear={handleClearAll}
-            onOpenPresets={() => setPresetLibraryOpen(true)}
-            onAnalyze={handleAnalyzeCanvas}
-            isAnalyzing={isAnalyzing}
-          />
+            <Button
+              onClick={handleAnalyzeCanvas}
+              disabled={isAnalyzing}
+              className="rounded-xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/25 gap-2 text-xs px-4"
+            >
+              <Sparkles className={`w-4 h-4 ${isAnalyzing ? "animate-spin" : "animate-bounce"}`} />
+              {isAnalyzing ? "Analyzing..." : "Analyze Canvas ✨"}
+            </Button>
+          </div>
 
           {/* Sliding Solution & Problem Breakdown Panel */}
           <SolutionPanel
@@ -338,7 +363,13 @@ export default function Home() {
           <ChatPanel
             messages={messages}
             onSendMessage={handleSendChatMessage}
-            onAttachCanvasCrop={() => canvasRef.current?.getCroppedRegion() || null}
+            onAttachCanvasCrop={() => {
+              // Synchronous fallback preview trigger
+              exportExcalidrawSnapshot().then((crop) => {
+                if (crop) handleSendChatMessage("", crop);
+              });
+              return null;
+            }}
             isOpen={isChatOpen}
             onToggleOpen={() => setIsChatOpen((prev) => !prev)}
             isAnalyzing={isAnalyzing}
