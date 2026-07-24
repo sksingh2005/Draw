@@ -157,15 +157,15 @@ JSON SCHEMA
 }
 
 ══════════════════════════════════════════════════════════════════
-TEACHING QUALITY
+TEACHING QUALITY & MANDATORY CANVAS TEXT RULES
 ══════════════════════════════════════════════════════════════════
+• MANDATORY TEXT RULE: Every single rectangle, diamond, ellipse, or text object in canvasDrawings MUST include a clear, non-empty text property explaining the step or concept (e.g. text: "Step 1: Identify coefficients a=1, b=-5, c=6"). NEVER return empty shapes or blank boxes!
+• NEVER return an empty canvasDrawings array when asked to explain a math, science, or logic problem. Always generate 3-6 visual canvas elements (rectangles with step callout text, connecting vector arrows, root highlight ellipses, or freedraw curves)!
 • Be accurate. Prefer geometric intuition + formulas together.
-• Use color consistently: indigo for structure, red for highlights/roots, slate for axes.
+• Use color consistently: indigo for structure (#6366f1), emerald for intermediate steps (#10b981), red for highlights/roots (#ef4444), slate for axes (#94a3b8).
 • If the canvas image is empty and there is no text question, ask (in summary)
-  what to solve and still sketch a friendly welcome callout — do not invent a
-  random hard problem as if it were on the board.
-• If the user question is pure chat with no visual need, you may return an empty
-  canvasDrawings array and answer in summary + steps only.
+  what to solve and still sketch a friendly welcome callout box with text.
+
 `;
 
 /**

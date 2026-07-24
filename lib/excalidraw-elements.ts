@@ -144,7 +144,7 @@ export function aiElementToExcalidraw(
           type: "text",
           x: item.x,
           y: item.y,
-          width: item.width || 200,
+          width: item.width || 240,
           height: item.height || 40,
           strokeColor: strokeColor === "#6366f1" ? "#1e1b4b" : strokeColor,
           backgroundColor: "transparent",
@@ -170,6 +170,8 @@ export function aiElementToExcalidraw(
   // rectangle | diamond | ellipse
   const shapeType =
     item.type === "diamond" || item.type === "ellipse" ? item.type : "rectangle";
+  const itemText = item.text || item.label;
+  const textId = itemText ? randId(`ai-text-${index}`) : null;
 
   elements.push(
     baseProps(
@@ -178,7 +180,7 @@ export function aiElementToExcalidraw(
         type: shapeType,
         x: item.x,
         y: item.y,
-        width: item.width || 200,
+        width: item.width || 260,
         height: item.height || 120,
         strokeColor,
         backgroundColor:
@@ -188,13 +190,13 @@ export function aiElementToExcalidraw(
         fillStyle,
         strokeWidth: item.strokeWidth || 2,
         roundness: shapeType === "ellipse" ? null : { type: 3 },
+        boundElements: textId ? [{ type: "text", id: textId }] : null,
       },
       provenance
     )
   );
 
-  if (item.text) {
-    const textId = randId(`ai-text-${index}`);
+  if (itemText && textId) {
     elements.push(
       baseProps(
         {
@@ -202,20 +204,20 @@ export function aiElementToExcalidraw(
           type: "text",
           x: item.x + 14,
           y: item.y + 14,
-          width: Math.max(40, (item.width || 200) - 28),
+          width: Math.max(40, (item.width || 260) - 28),
           height: Math.max(24, (item.height || 120) - 28),
           strokeColor: "#1e1b4b",
           backgroundColor: "transparent",
           fillStyle: "hachure",
           strokeWidth: 1,
           roundness: null,
-          text: item.text,
+          text: itemText,
           fontSize: item.fontSize || 15,
           fontFamily: 1,
           textAlign: "left",
           verticalAlign: "top",
-          containerId: baseId,
-          originalText: item.text,
+          containerId: null, // Render as overlaid text note to guarantee 100% visibility
+          originalText: itemText,
           autoResize: false,
           lineHeight: 1.25,
         },
@@ -297,22 +299,13 @@ export async function animateFreedraw(
 }
 
 export interface ProgressiveDrawOptions {
-  /** Delay between discrete shapes (rect, arrow, text…). */
   shapeDelayMs?: number;
-  /** Delay between freedraw points. */
   pointDelayMs?: number;
-  /** Called after each visual frame with the full scene. */
   onSceneUpdate?: (elements: ExcalidrawElement[]) => void;
-  /** Called when a single AI instruction starts drawing. */
   onDrawStart?: (item: AiCanvasElement, index: number) => void;
-  /** Abort mid-animation. */
   signal?: AbortSignal;
 }
 
-/**
- * Draw AI elements onto the canvas one-by-one in real time.
- * Freedraw strokes animate point-by-point like a pencil.
- */
 export async function progressiveDrawOnCanvas(
   api: ExcalidrawAPILike,
   drawings: AiCanvasElement[],
@@ -343,7 +336,6 @@ export async function progressiveDrawOnCanvas(
           },
         });
       } else {
-        // Brief "pop-in": insert, then soft delay before next
         lastScene = appendToScene(api, [el]);
         opts.onSceneUpdate?.(lastScene);
         await sleep(Math.min(120, shapeDelayMs / 2));
@@ -353,7 +345,6 @@ export async function progressiveDrawOnCanvas(
     await sleep(shapeDelayMs);
   }
 
-  // Nudge viewport to show the new work
   try {
     api.scrollToContent?.(lastScene.slice(-3));
   } catch {
@@ -363,10 +354,6 @@ export async function progressiveDrawOnCanvas(
   return lastScene;
 }
 
-/**
- * Extract newly completed objects from a streaming `canvasDrawings: [...]` JSON array.
- * Returns only items beyond `alreadyCount` so callers can emit deltas.
- */
 export function extractNewCanvasDrawings(
   partialJsonText: string,
   alreadyCount: number
@@ -424,7 +411,6 @@ export function extractNewCanvasDrawings(
       continue;
     }
 
-    // End of array
     if (ch === "]" && depth === 0) break;
   }
 
@@ -447,12 +433,16 @@ function normalizeDrawing(elem: Record<string, unknown>): AiCanvasElement {
         .filter(Boolean) as [number, number][]
     : undefined;
 
+  const rawText = elem.text ? String(elem.text) : elem.label ? String(elem.label) : undefined;
+  const shapeKind = ["rectangle", "ellipse", "arrow", "text", "diamond", "freedraw", "line"].includes(type)
+    ? type
+    : "rectangle";
+
+  // Guarantee every container shape has non-empty text content
+  const text = rawText || (["rectangle", "diamond", "ellipse"].includes(shapeKind) ? "AI Visual Step" : undefined);
+
   return {
-    type: (["rectangle", "ellipse", "arrow", "text", "diamond", "freedraw", "line"].includes(
-      type
-    )
-      ? type
-      : "rectangle") as AiCanvasElement["type"],
+    type: shapeKind as AiCanvasElement["type"],
     x: Number(elem.x) || 0,
     y: Number(elem.y) || 0,
     width: Number(elem.width) || 120,
@@ -460,7 +450,7 @@ function normalizeDrawing(elem: Record<string, unknown>): AiCanvasElement {
     strokeColor: (elem.strokeColor as string) || "#6366f1",
     backgroundColor: (elem.backgroundColor as string) || "transparent",
     fillStyle: (elem.fillStyle as AiCanvasElement["fillStyle"]) || "hachure",
-    text: elem.text ? String(elem.text) : undefined,
+    text,
     label: elem.label ? String(elem.label) : undefined,
     points,
     strokeWidth: elem.strokeWidth ? Number(elem.strokeWidth) : undefined,
