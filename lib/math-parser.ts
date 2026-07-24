@@ -56,7 +56,7 @@ export interface PracticeProblem {
 }
 
 export interface AiCanvasElement {
-  type: "rectangle" | "ellipse" | "arrow" | "text" | "diamond";
+  type: "rectangle" | "ellipse" | "arrow" | "text" | "diamond" | "freedraw" | "line";
   x: number;
   y: number;
   width: number;
@@ -66,6 +66,11 @@ export interface AiCanvasElement {
   fillStyle?: "hachure" | "solid" | "cross-hatch";
   text?: string;
   label?: string;
+  /** Relative polyline points for freedraw / line / arrow (Excalidraw-style). */
+  points?: [number, number][];
+  strokeWidth?: number;
+  strokeStyle?: "solid" | "dashed" | "dotted";
+  fontSize?: number;
 }
 
 export interface MathAnalysisResult {
@@ -147,18 +152,7 @@ export function parseMathAnalysisResponse(
           }))
         : [],
       canvasDrawings: Array.isArray(parsed.canvasDrawings)
-        ? parsed.canvasDrawings.map((elem: any) => ({
-            type: elem.type || "rectangle",
-            x: Number(elem.x) || coordinates.x + 350,
-            y: Number(elem.y) || coordinates.y,
-            width: Number(elem.width) || 280,
-            height: Number(elem.height) || 140,
-            strokeColor: elem.strokeColor || "#6366f1",
-            backgroundColor: elem.backgroundColor || "transparent",
-            fillStyle: elem.fillStyle || "hachure",
-            text: elem.text || undefined,
-            label: elem.label || undefined,
-          }))
+        ? parsed.canvasDrawings.map((elem: any) => normalizeCanvasDrawing(elem, coordinates))
         : undefined,
       createdAt: Date.now()
     };
@@ -174,6 +168,52 @@ function validateClassification(cat: any): MathAnalysisResult["classification"] 
     return cat.toLowerCase() as MathAnalysisResult["classification"];
   }
   return "equation";
+}
+
+const VALID_DRAW_TYPES = new Set([
+  "rectangle",
+  "ellipse",
+  "arrow",
+  "text",
+  "diamond",
+  "freedraw",
+  "line",
+]);
+
+export function normalizeCanvasDrawing(
+  elem: any,
+  coordinates: CanvasCoordinates = { x: 100, y: 100, width: 300, height: 200 }
+): AiCanvasElement {
+  const typeRaw = String(elem?.type || "rectangle").toLowerCase();
+  const type = (VALID_DRAW_TYPES.has(typeRaw) ? typeRaw : "rectangle") as AiCanvasElement["type"];
+
+  const points = Array.isArray(elem?.points)
+    ? (elem.points as unknown[])
+        .map((p) => {
+          if (Array.isArray(p) && p.length >= 2) {
+            return [Number(p[0]) || 0, Number(p[1]) || 0] as [number, number];
+          }
+          return null;
+        })
+        .filter(Boolean) as [number, number][]
+    : undefined;
+
+  return {
+    type,
+    x: Number(elem?.x) || coordinates.x + 350,
+    y: Number(elem?.y) || coordinates.y,
+    width: Number(elem?.width) || 280,
+    height: Number(elem?.height) || 140,
+    strokeColor: elem?.strokeColor || "#6366f1",
+    backgroundColor: elem?.backgroundColor || "transparent",
+    fillStyle: elem?.fillStyle || "hachure",
+    text: elem?.text || undefined,
+    label: elem?.label || undefined,
+    points,
+    strokeWidth: elem?.strokeWidth != null ? Number(elem.strokeWidth) : undefined,
+    strokeStyle: elem?.strokeStyle || undefined,
+    fontSize: elem?.fontSize != null ? Number(elem.fontSize) : undefined,
+  };
 }
 
 function cleanLatex(latexStr: string): string {
