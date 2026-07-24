@@ -182,9 +182,15 @@ export function ChatPanel({
         })}
 
         {isAnalyzing && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground p-2 animate-pulse">
-            <Sparkles className="w-4 h-4 text-indigo-500 animate-spin" />
-            <span>AI analyzing query & canvas...</span>
+          <div className="flex flex-col gap-1.5 text-xs text-muted-foreground p-2">
+            <div className="flex items-center gap-2 animate-pulse">
+              <Sparkles className="w-4 h-4 text-indigo-500 animate-spin" />
+              <span>AI analyzing query & canvas…</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-indigo-600 dark:text-indigo-400 pl-6">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping" />
+              Streaming shapes & pencil strokes onto the whiteboard in real time
+            </div>
           </div>
         )}
 
