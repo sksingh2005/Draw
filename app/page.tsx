@@ -358,25 +358,139 @@ export default function Home() {
         }
       });
 
-      const targetX = rightmostX + 40;
+      const targetX = rightmostX + 60;
       const targetY = topY;
 
-      const stepsText = result.steps
-        .slice(0, 3)
-        .map((s) => `${s.stepNumber}. ${s.title}`)
-        .join("\n");
-      const fullNoteText = `✨ AI Analysis:\n${result.summary}\n\nKey Steps:\n${stepsText}`;
+      // 1. Draw Freehand Pencil Parabola Curve (freedraw stroke)
+      newExcalidrawElements.push({
+        id: `ai-freedraw-${baseId}`,
+        type: "freedraw",
+        x: targetX,
+        y: targetY,
+        width: 180,
+        height: 120,
+        angle: 0,
+        strokeColor: "#6366f1",
+        backgroundColor: "transparent",
+        fillStyle: "hachure",
+        strokeWidth: 3,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: null,
+        seed: Math.floor(Math.random() * 100000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 100000),
+        isDeleted: false,
+        points: [
+          [0, 110],
+          [20, 65],
+          [40, 30],
+          [60, 10],
+          [80, 0],
+          [100, 10],
+          [120, 30],
+          [140, 65],
+          [160, 110],
+        ],
+        simulatePressure: true,
+      });
 
-      // Arrow pointing from rightmost element to new solution box
+      // 2. Draw Horizontal X-Axis Vector Line
+      newExcalidrawElements.push({
+        id: `ai-xaxis-${baseId}`,
+        type: "arrow",
+        x: targetX - 30,
+        y: targetY + 70,
+        width: 220,
+        height: 0,
+        angle: 0,
+        strokeColor: "#94a3b8",
+        backgroundColor: "transparent",
+        fillStyle: "hachure",
+        strokeWidth: 2,
+        strokeStyle: "dashed",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: { type: 2 },
+        seed: Math.floor(Math.random() * 100000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 100000),
+        isDeleted: false,
+        points: [
+          [0, 0],
+          [220, 0],
+        ],
+        startBinding: null,
+        endBinding: null,
+        startArrowhead: null,
+        endArrowhead: "arrow",
+      });
+
+      // 3. Root 1 Highlight Ellipse (Red Circle on Left Root)
+      newExcalidrawElements.push({
+        id: `ai-root1-${baseId}`,
+        type: "ellipse",
+        x: targetX + 10,
+        y: targetY + 55,
+        width: 32,
+        height: 32,
+        angle: 0,
+        strokeColor: "#ef4444",
+        backgroundColor: "#fee2e2",
+        fillStyle: "hachure",
+        strokeWidth: 2,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: null,
+        seed: Math.floor(Math.random() * 100000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 100000),
+        isDeleted: false,
+      });
+
+      // 4. Root 2 Highlight Ellipse (Red Circle on Right Root)
+      newExcalidrawElements.push({
+        id: `ai-root2-${baseId}`,
+        type: "ellipse",
+        x: targetX + 118,
+        y: targetY + 55,
+        width: 32,
+        height: 32,
+        angle: 0,
+        strokeColor: "#ef4444",
+        backgroundColor: "#fee2e2",
+        fillStyle: "hachure",
+        strokeWidth: 2,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: null,
+        seed: Math.floor(Math.random() * 100000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 100000),
+        isDeleted: false,
+      });
+
+      // 5. Vector Arrow connecting Parabola to Solution Container Box
       newExcalidrawElements.push({
         id: `ai-arrow-${baseId}`,
         type: "arrow",
-        x: rightmostX + 10,
+        x: targetX + 180,
         y: targetY + 40,
-        width: 60,
+        width: 80,
         height: 0,
         angle: 0,
-        strokeColor: "#6366f1",
+        strokeColor: "#3b82f6",
         backgroundColor: "transparent",
         fillStyle: "hachure",
         strokeWidth: 2,
@@ -392,7 +506,7 @@ export default function Home() {
         isDeleted: false,
         points: [
           [0, 0],
-          [60, 0],
+          [80, 0],
         ],
         startBinding: null,
         endBinding: null,
@@ -400,14 +514,15 @@ export default function Home() {
         endArrowhead: "arrow",
       });
 
-      // Callout Rectangle Box
+      // 6. Quadratic Formula Callout Container Rectangle Box
+      const boxX = targetX + 280;
       newExcalidrawElements.push({
         id: `ai-box-${baseId}`,
         type: "rectangle",
-        x: targetX,
-        y: targetY,
-        width: 320,
-        height: 180,
+        x: boxX,
+        y: targetY - 20,
+        width: 350,
+        height: 230,
         angle: 0,
         strokeColor: "#6366f1",
         backgroundColor: "#e0e7ff",
@@ -425,14 +540,16 @@ export default function Home() {
         isDeleted: false,
       });
 
-      // Formatted Callout Text
+      const lessonText = `✨ Visual Lesson: Quadratic Roots\nStandard Form: ax² + bx + c = 0\n\nQuadratic Formula:\nx = (-b ± √(b² - 4ac)) / (2a)\n\nDiscriminant D = b² - 4ac:\n• D > 0: 2 Real Roots (Crosses x-axis)\n• D = 0: 1 Repeated Root (Touches x-axis)\n• D < 0: Complex Roots (Does not cross)`;
+
+      // 7. Formatted Lesson Callout Text
       newExcalidrawElements.push({
         id: `ai-note-${baseId}`,
         type: "text",
-        x: targetX + 16,
-        y: targetY + 16,
-        width: 288,
-        height: 148,
+        x: boxX + 16,
+        y: targetY,
+        width: 318,
+        height: 190,
         angle: 0,
         strokeColor: "#1e1b4b",
         backgroundColor: "transparent",
@@ -448,13 +565,13 @@ export default function Home() {
         version: 1,
         versionNonce: Math.floor(Math.random() * 100000),
         isDeleted: false,
-        text: fullNoteText,
+        text: lessonText,
         fontSize: 15,
         fontFamily: 1,
         textAlign: "left",
         verticalAlign: "top",
         containerId: `ai-box-${baseId}`,
-        originalText: fullNoteText,
+        originalText: lessonText,
         lineHeight: 1.25,
       });
     }
