@@ -174,23 +174,28 @@ export default function Home() {
     }
   };
 
-  // Export Excalidraw Scene Snapshot as Base64 Data URL
-  const exportExcalidrawSnapshot = async (): Promise<string | null> => {
+  // Export Excalidraw Scene Snapshot as Base64 Data URL (Support cropped selection export)
+  const exportExcalidrawSnapshot = async (elementsToExport?: readonly any[]): Promise<string | null> => {
     if (!excalidrawAPI) return null;
     try {
-      const elements = excalidrawAPI.getSceneElements();
+      const { exportToBlob } = await import("@excalidraw/excalidraw");
+      const elements = elementsToExport && elementsToExport.length > 0
+        ? elementsToExport
+        : excalidrawAPI.getSceneElements();
+
       if (!elements || elements.length === 0) return null;
 
-      const mod = await import("@excalidraw/excalidraw");
-      const blob = await mod.exportToBlob({
-        elements,
+      const blob = await exportToBlob({
+        elements: elements as any,
         appState: {
           ...excalidrawAPI.getAppState(),
-          exportWithBackground: true,
+          exportBackground: true,
           viewBackgroundColor: "#ffffff",
+          exportWithDarkMode: false,
         },
         files: excalidrawAPI.getFiles(),
         mimeType: "image/png",
+        exportPadding: 30,
       });
 
       return new Promise((resolve) => {
@@ -391,7 +396,7 @@ export default function Home() {
 
     const imageBase64 =
       opts.imageBase64 === undefined
-        ? await exportExcalidrawSnapshot()
+        ? await exportExcalidrawSnapshot(selection.length > 0 ? selection : undefined)
         : opts.imageBase64;
 
     const selBounds = selectionBoundsFromElements(selection);
@@ -787,7 +792,8 @@ export default function Home() {
             messages={messages}
             onSendMessage={handleSendChatMessage}
             onAttachCanvasCrop={() => {
-              exportExcalidrawSnapshot().then((crop) => {
+              const target = selectedElements.length > 0 ? selectedElements : undefined;
+              exportExcalidrawSnapshot(target).then((crop) => {
                 if (crop) handleSendChatMessage("", crop);
               });
               return null;
