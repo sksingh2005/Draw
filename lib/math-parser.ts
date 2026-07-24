@@ -75,7 +75,7 @@ export interface AiCanvasElement {
 
 export interface MathAnalysisResult {
   id: string;
-  classification: "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph";
+  classification: "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph" | "architecture" | "schema" | "flowchart";
   latexFormula: string;
   detectedText: string;
   targetCoordinates: CanvasCoordinates;
@@ -118,15 +118,15 @@ export function parseMathAnalysisResponse(
     return {
       id: resultId,
       classification: validateClassification(parsed.classification),
-      latexFormula: parsed.latexFormula ? cleanLatex(parsed.latexFormula) : "f(x) = 0",
-      detectedText: parsed.detectedText || "Mathematical Expression",
+      latexFormula: parsed.latexFormula ? cleanLatex(parsed.latexFormula) : "",
+      detectedText: parsed.detectedText || "Canvas Query / Diagram",
       targetCoordinates: parsed.targetCoordinates || coordinates,
-      summary: parsed.summary || "Step-by-step breakdown of the detected problem.",
+      summary: parsed.summary || "Step-by-step breakdown of the detected problem or system design.",
       updateMode: "append",
-      focusNote: parsed.focusNote ? String(parsed.focusNote) : undefined,
+      focusNote: parsed.focusNote || undefined,
       keyVariables: Array.isArray(parsed.keyVariables)
         ? parsed.keyVariables.map((v: any) => ({
-            symbol: cleanLatex(v.symbol || "x"),
+            symbol: cleanLatex(v.symbol || "Node"),
             value: String(v.value || ""),
             description: String(v.description || "")
           }))
@@ -143,7 +143,7 @@ export function parseMathAnalysisResponse(
         : [],
       graphConfig: parsed.graphConfig ? parseGraphConfig(parsed.graphConfig) : undefined,
       conceptExplanation: parsed.conceptExplanation ? {
-        title: String(parsed.conceptExplanation.title || "Core Concept"),
+        title: String(parsed.conceptExplanation.title || "Core System Concept"),
         coreIdea: String(parsed.conceptExplanation.coreIdea || ""),
         realWorldApplication: String(parsed.conceptExplanation.realWorldApplication || ""),
         keyTakeaway: String(parsed.conceptExplanation.keyTakeaway || "")
@@ -151,14 +151,25 @@ export function parseMathAnalysisResponse(
       practiceProblems: Array.isArray(parsed.practiceProblems)
         ? parsed.practiceProblems.map((p: any, pIdx: number) => ({
             id: `prac-${pIdx}`,
-            question: String(p.question || "Practice question"),
+            question: String(p.question || "Design Challenge"),
             latex: cleanLatex(p.latex || ""),
-            hint: String(p.hint || "Try breaking down into steps."),
+            hint: String(p.hint || "Think about scalability and decoupled architecture."),
             solution: String(p.solution || "Solution")
           }))
         : [],
       canvasDrawings: Array.isArray(parsed.canvasDrawings)
-        ? parsed.canvasDrawings.map((elem: any) => normalizeCanvasDrawing(elem, coordinates))
+        ? parsed.canvasDrawings.map((elem: any) => ({
+            type: elem.type || "rectangle",
+            x: Number(elem.x) || coordinates.x + 350,
+            y: Number(elem.y) || coordinates.y,
+            width: Number(elem.width) || 280,
+            height: Number(elem.height) || 140,
+            strokeColor: elem.strokeColor || "#6366f1",
+            backgroundColor: elem.backgroundColor || "transparent",
+            fillStyle: elem.fillStyle || "hachure",
+            text: elem.text || elem.label || undefined,
+            label: elem.label || undefined,
+          }))
         : undefined,
       createdAt: Date.now()
     };
@@ -169,11 +180,11 @@ export function parseMathAnalysisResponse(
 }
 
 function validateClassification(cat: any): MathAnalysisResult["classification"] {
-  const valid = ["equation", "calculus", "geometry", "physics", "concept", "graph"];
+  const valid = ["equation", "calculus", "geometry", "physics", "concept", "graph", "architecture", "schema", "flowchart"];
   if (typeof cat === "string" && valid.includes(cat.toLowerCase())) {
     return cat.toLowerCase() as MathAnalysisResult["classification"];
   }
-  return "equation";
+  return "architecture";
 }
 
 const VALID_DRAW_TYPES = new Set([

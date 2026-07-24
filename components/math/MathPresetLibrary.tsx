@@ -10,19 +10,49 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KatexRenderer } from "./KatexRenderer";
-import { Sparkles, Calculator, Compass, Atom, FunctionSquare } from "lucide-react";
+import { Sparkles, Calculator, Compass, Atom, FunctionSquare, Server, Database } from "lucide-react";
 
 export interface MathTemplate {
   id: string;
   name: string;
-  category: "algebra" | "calculus" | "geometry" | "physics";
+  category: "algebra" | "calculus" | "geometry" | "physics" | "architecture";
   latex: string;
   description: string;
 }
 
 const PRESET_TEMPLATES: MathTemplate[] = [
+  // System Architecture & DB Schemas
+  {
+    id: "microservices-arch",
+    name: "Microservices Cloud Architecture",
+    category: "architecture",
+    latex: "\\text{Client} \\rightarrow \\text{API Gateway} \\rightarrow \\text{Auth Service} \\rightarrow \\text{PostgreSQL}",
+    description: "Decoupled cloud infrastructure with API Gateway, Auth Microservice, and DB."
+  },
+  {
+    id: "database-er-schema",
+    name: "E-Commerce Database ER Schema",
+    category: "architecture",
+    latex: "\\text{Users}(id) \\xleftarrow{1:N} \\text{Orders}(id, user\\_id) \\xrightarrow{N:1} \\text{Payments}",
+    description: "Relational database schema with Primary/Foreign Keys and entity relationships."
+  },
+  {
+    id: "kafka-event-driven",
+    name: "Event-Driven Kafka Architecture",
+    category: "architecture",
+    latex: "\\text{Producers} \\rightarrow \\text{Kafka Cluster} \\rightarrow \\text{Consumer Groups}",
+    description: "Asynchronous pub/sub event pipeline with message brokers and workers."
+  },
+  {
+    id: "oauth2-auth-flow",
+    name: "OAuth 2.0 Authorization Flow",
+    category: "architecture",
+    latex: "\\text{Client} \\rightarrow \\text{Auth Server} \\rightarrow \\text{JWT Token} \\rightarrow \\text{Resource API}",
+    description: "Secure token-based authentication and authorization flow."
+  },
+
   // Algebra
   {
     id: "quad-formula",
@@ -37,13 +67,6 @@ const PRESET_TEMPLATES: MathTemplate[] = [
     category: "algebra",
     latex: "a^2 - b^2 = (a - b)(a + b)",
     description: "Algebraic identity for factoring square differences."
-  },
-  {
-    id: "log-change",
-    name: "Change of Base Formula",
-    category: "algebra",
-    latex: "\\log_b(x) = \\frac{\\log_a(x)}{\\log_a(b)}",
-    description: "Evaluates logarithms in arbitrary bases."
   },
 
   // Calculus
@@ -61,13 +84,6 @@ const PRESET_TEMPLATES: MathTemplate[] = [
     latex: "\\int u \\, dv = uv - \\int v \\, du",
     description: "Calculus integration technique for product functions."
   },
-  {
-    id: "euler-identity",
-    name: "Euler's Identity",
-    category: "calculus",
-    latex: "e^{i\\pi} + 1 = 0",
-    description: "Connects five fundamental mathematical constants."
-  },
 
   // Geometry & Trig
   {
@@ -76,13 +92,6 @@ const PRESET_TEMPLATES: MathTemplate[] = [
     category: "geometry",
     latex: "a^2 + b^2 = c^2",
     description: "Relates hypotenuse c to leg lengths a and b in right triangles."
-  },
-  {
-    id: "trig-pythagoras",
-    name: "Trigonometric Pythagorean Identity",
-    category: "geometry",
-    latex: "\\sin^2(\\theta) + \\cos^2(\\theta) = 1",
-    description: "Fundamental trigonometric identity."
   },
 
   // Physics
@@ -99,13 +108,6 @@ const PRESET_TEMPLATES: MathTemplate[] = [
     category: "physics",
     latex: "x(t) = x_0 + v_0 t + \\frac{1}{2} a t^2",
     description: "Describes displacement under constant acceleration."
-  },
-  {
-    id: "newton-second",
-    name: "Newton's Second Law",
-    category: "physics",
-    latex: "F_{\\text{net}} = m a",
-    description: "Net force equals mass times acceleration."
   }
 ];
 
@@ -132,17 +134,20 @@ export function MathPresetLibrary({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl font-bold">
             <Sparkles className="w-5 h-5 text-indigo-500" />
-            Math & Science Formula Library
+            Canvas Template & Architecture Library
           </DialogTitle>
           <DialogDescription>
-            Select a formula to insert directly onto your whiteboard canvas for step-by-step resolution.
+            Select a system architecture diagram, database schema, or math formula to insert onto your whiteboard.
           </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="all" value={selectedTab} onValueChange={setSelectedTab} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid grid-cols-5 w-full bg-muted/60 p-1">
+          <TabsList className="grid grid-cols-6 w-full bg-muted/60 p-1">
             <TabsTrigger value="all" className="text-xs">
               All
+            </TabsTrigger>
+            <TabsTrigger value="architecture" className="text-xs flex items-center gap-1">
+              <Server className="w-3.5 h-3.5" /> Systems
             </TabsTrigger>
             <TabsTrigger value="algebra" className="text-xs flex items-center gap-1">
               <Calculator className="w-3.5 h-3.5" /> Algebra
