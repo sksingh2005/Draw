@@ -1,8 +1,13 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import "@excalidraw/excalidraw/index.css";
+import {
+  ensureUserProvenance,
+  getElementSource,
+  type SceneElementLike,
+} from "@/lib/canvas-provenance";
 
 export interface ExcalidrawImperativeAPI {
   getSceneElements: () => readonly any[];
@@ -30,19 +35,69 @@ const Excalidraw = dynamic(
 interface ExcalidrawCanvasProps {
   onApiReady?: (api: ExcalidrawImperativeAPI) => void;
   onElementsChange?: (elements: readonly any[]) => void;
+  /** Fired when the set of selected element ids changes. */
+  onSelectionChange?: (selectedElements: readonly any[]) => void;
   initialElements?: readonly any[];
 }
 
 export function ExcalidrawCanvas({
   onApiReady,
   onElementsChange,
+  onSelectionChange,
   initialElements = [],
 }: ExcalidrawCanvasProps) {
+  const lastSelectionKey = useRef<string>("");
+  const stampedIds = useRef<Set<string>>(new Set());
+
   const handleExcalidrawAPI = useCallback(
     (api: any) => {
       if (onApiReady && api) onApiReady(api as ExcalidrawImperativeAPI);
     },
     [onApiReady]
+  );
+
+  const handleChange = useCallback(
+    (elements: readonly any[], appState: any) => {
+      // Stamp new user strokes with provenance once (skip already-AI-tagged)
+      const stamped = elements.map((el) => {
+        if (!el || el.isDeleted) return el;
+        const id = String(el.id);
+        if (stampedIds.current.has(id)) return el;
+        if (getElementSource(el as SceneElementLike) === "ai") {
+          stampedIds.current.add(id);
+          return el;
+        }
+        // Only stamp plain user-drawn elements that lack ownership
+        if (!el.customData?.drawSource) {
+          stampedIds.current.add(id);
+          return ensureUserProvenance(el as SceneElementLike);
+        }
+        stampedIds.current.add(id);
+        return el;
+      });
+
+      if (onElementsChange) onElementsChange(stamped);
+
+      if (onSelectionChange && appState) {
+        const selectedIds: string[] = Array.isArray(appState.selectedElementIds)
+          ? appState.selectedElementIds
+          : appState.selectedElementIds
+            ? Object.entries(appState.selectedElementIds)
+                .filter(([, v]) => Boolean(v))
+                .map(([k]) => k)
+            : [];
+
+        const key = selectedIds.slice().sort().join(",");
+        if (key !== lastSelectionKey.current) {
+          lastSelectionKey.current = key;
+          const selected = stamped.filter(
+            (e) => e && !e.isDeleted && selectedIds.includes(String(e.id))
+          );
+          onSelectionChange(selected);
+        }
+      }
+    },
+    [onElementsChange, onSelectionChange]
   );
 
   return (
@@ -57,9 +112,7 @@ export function ExcalidrawCanvas({
             gridSize: 20,
           },
         }}
-        onChange={(elements, appState) => {
-          if (onElementsChange) onElementsChange(elements);
-        }}
+        onChange={handleChange}
         UIOptions={{
           canvasActions: {
             changeViewBackgroundColor: true,

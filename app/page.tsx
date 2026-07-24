@@ -5,6 +5,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ExcalidrawCanvas, ExcalidrawImperativeAPI } from "@/components/canvas/ExcalidrawCanvas";
+import { CanvasQueryBar } from "@/components/canvas/CanvasQueryBar";
 import { MathPresetLibrary, MathTemplate } from "@/components/math/MathPresetLibrary";
 import { SolutionPanel } from "@/components/canvas/SolutionPanel";
 import { ApiKeyModal } from "@/components/layout/ApiKeyModal";
@@ -23,11 +24,20 @@ import {
 } from "@/lib/workspace-store";
 import { streamAnalyze } from "@/lib/analyze-client";
 import {
-  progressiveDrawOnCanvas,
   aiElementToExcalidraw,
   appendToScene,
   animateFreedraw,
 } from "@/lib/excalidraw-elements";
+import {
+  buildLayoutMap,
+  resolveNonOverlappingDrawings,
+  selectionBoundsFromElements,
+  summarizeSelection,
+  getElementSource,
+  ensureUserProvenance,
+  type Bounds,
+} from "@/lib/canvas-provenance";
+import type { AnalysisMode } from "@/lib/prompts/whiteboard-professor";
 
 export default function Home() {
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawImperativeAPI | null>(null);
@@ -55,8 +65,17 @@ export default function Home() {
   const [currentResult, setCurrentResult] = useState<MathAnalysisResult | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState<boolean>(false);
   const [presetLibraryOpen, setPresetLibraryOpen] = useState<boolean>(false);
+  const [selectedElements, setSelectedElements] = useState<readonly any[]>([]);
   const streamAbortRef = useRef<AbortController | null>(null);
   const drawQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const aiSessionRef = useRef<string>(`session-${Date.now()}`);
+  const placementCtxRef = useRef<{
+    occupied: Bounds[];
+    suggested: Bounds | null;
+    batchResolved: boolean;
+    dx: number;
+    dy: number;
+  }>({ occupied: [], suggested: null, batchResolved: false, dx: 0, dy: 0 });
 
   // Load initial pages & API key
   useEffect(() => {
@@ -92,20 +111,27 @@ export default function Home() {
     savePage(updatedPage);
   }, [excalidrawElements, messages, activePage]);
 
-  // Extract compact layout summary of existing canvas elements
-  const getExistingElementsSummary = useCallback((): string => {
-    if (!excalidrawAPI) return "";
-    const elems = excalidrawAPI.getSceneElements();
-    if (!elems || elems.length === 0) return "Canvas is empty.";
+  /** Ownership-tagged layout map + free-space placement for the LLM. */
+  const getLayoutContext = useCallback(
+    (selection: readonly any[] = []) => {
+      const elems = excalidrawAPI?.getSceneElements() || excalidrawElements || [];
+      const selectionIds = selection.map((e) => String(e.id));
+      const selBounds = selectionBoundsFromElements(selection);
+      return buildLayoutMap(elems as any[], {
+        selectionIds,
+        selectionBounds: selBounds,
+        preferredNear: selBounds,
+      });
+    },
+    [excalidrawAPI, excalidrawElements]
+  );
 
-    return elems
-      .filter((e: any) => !e.isDeleted)
-      .map((e: any, idx: number) => {
-        const textSnippet = e.text ? ` text="${e.text.slice(0, 30)}..."` : "";
-        return `[Elem ${idx + 1}]: id="${e.id}" type="${e.type}" bounds=[x:${Math.round(e.x)}, y:${Math.round(e.y)}, w:${Math.round(e.width || 0)}, h:${Math.round(e.height || 0)}]${textSnippet}`;
-      })
+  const getConversationSnippet = useCallback(() => {
+    return messages
+      .slice(-4)
+      .map((m) => `${m.sender === "user" ? "User" : "AI"}: ${m.text.slice(0, 160)}`)
       .join("\n");
-  }, [excalidrawAPI]);
+  }, [messages]);
 
   // Switch Workspace Page
   const handleSelectPage = (id: string) => {
@@ -173,6 +199,42 @@ export default function Home() {
     }
   };
 
+  /** Shift a single drawing into free space if it would overlap occupied content. */
+  const deconflictDrawing = useCallback((item: AiCanvasElement): AiCanvasElement => {
+    const ctx = placementCtxRef.current;
+    if (!ctx.occupied.length) return item;
+
+    // Resolve whole-batch offset once using first drawing + suggested slot
+    if (!ctx.batchResolved) {
+      const [shifted] = resolveNonOverlappingDrawings(
+        [item],
+        ctx.occupied,
+        ctx.suggested
+      );
+      ctx.dx = shifted.x - item.x;
+      ctx.dy = shifted.y - item.y;
+      ctx.batchResolved = true;
+    }
+
+    const next = {
+      ...item,
+      x: item.x + ctx.dx,
+      y: item.y + ctx.dy,
+    };
+
+    // Track newly claimed space so later shapes in this turn don't stack
+    ctx.occupied = [
+      ...ctx.occupied,
+      {
+        x: next.x,
+        y: next.y,
+        width: Math.max(1, next.width || 80),
+        height: Math.max(1, next.height || 40),
+      },
+    ];
+    return next;
+  }, []);
+
   /** Queue one AI drawing so stream events animate in order on the canvas. */
   const enqueueLiveDraw = useCallback(
     (item: AiCanvasElement, index: number) => {
@@ -181,7 +243,11 @@ export default function Home() {
         setIsDrawingLive(true);
         setDrawStatus(`Drawing ${item.type} #${index + 1}…`);
 
-        const built = aiElementToExcalidraw(item, index);
+        const safe = deconflictDrawing(item);
+        const built = aiElementToExcalidraw(safe, index, {
+          sessionId: aiSessionRef.current,
+          role: "explanation",
+        });
         for (const el of built) {
           if (el.type === "freedraw") {
             const scene = await animateFreedraw(excalidrawAPI, el, {
@@ -198,7 +264,7 @@ export default function Home() {
       });
       return drawQueueRef.current;
     },
-    [excalidrawAPI]
+    [excalidrawAPI, deconflictDrawing]
   );
 
   /** Fallback: animate a full result's drawings if none streamed mid-flight. */
@@ -206,121 +272,77 @@ export default function Home() {
     async (result: MathAnalysisResult) => {
       if (!excalidrawAPI) return;
 
-      const drawings = result.canvasDrawings;
-      if (drawings && drawings.length > 0) {
+      let drawings = result.canvasDrawings || [];
+      if (drawings.length > 0) {
+        drawings = drawings.map((d) => deconflictDrawing(d));
         setIsDrawingLive(true);
         setDrawStatus("Animating explanation on canvas…");
-        await progressiveDrawOnCanvas(excalidrawAPI, drawings, {
-          shapeDelayMs: 220,
-          pointDelayMs: 14,
-          onSceneUpdate: (els) => setExcalidrawElements(els),
-          onDrawStart: (item, idx) =>
-            setDrawStatus(`Drawing ${item.type} #${idx + 1}…`),
-        });
+        // progressiveDraw uses aiElementToExcalidraw without session — stamp via map
+        const stamped = drawings;
+        for (let i = 0; i < stamped.length; i++) {
+          setDrawStatus(`Drawing ${stamped[i].type} #${i + 1}…`);
+          const built = aiElementToExcalidraw(stamped[i], i, {
+            sessionId: aiSessionRef.current,
+            role: "explanation",
+          });
+          for (const el of built) {
+            if (el.type === "freedraw") {
+              const scene = await animateFreedraw(excalidrawAPI, el, {
+                pointDelayMs: 14,
+                onFrame: (els) => setExcalidrawElements(els),
+              });
+              setExcalidrawElements(scene);
+            } else {
+              const scene = appendToScene(excalidrawAPI, [el]);
+              setExcalidrawElements(scene);
+              await new Promise((r) => setTimeout(r, 160));
+            }
+          }
+          await new Promise((r) => setTimeout(r, 200));
+        }
         setIsDrawingLive(false);
         setDrawStatus("");
         return;
       }
 
-      // Hardcoded visual fallback when model omitted canvasDrawings
-      let rightmostX = 150;
-      let topY = 150;
-      excalidrawAPI.getSceneElements().forEach((e: any) => {
-        if (!e.isDeleted) {
-          const rightEdge = (e.x || 0) + (e.width || 0);
-          if (rightEdge > rightmostX) rightmostX = rightEdge;
-          if (e.y && e.y < topY) topY = e.y;
-        }
-      });
-      const targetX = rightmostX + 60;
-      const targetY = topY;
+      // Minimal free-space fallback when model omitted canvasDrawings
+      const layout = getLayoutContext();
+      const targetX = layout.suggestedPlacement.x;
+      const targetY = layout.suggestedPlacement.y;
 
       const fallback: AiCanvasElement[] = [
         {
-          type: "freedraw",
+          type: "rectangle",
           x: targetX,
           y: targetY,
-          width: 180,
-          height: 120,
-          strokeColor: "#6366f1",
-          strokeWidth: 3,
-          points: [
-            [0, 110],
-            [20, 65],
-            [40, 30],
-            [60, 10],
-            [80, 0],
-            [100, 10],
-            [120, 30],
-            [140, 65],
-            [160, 110],
-          ],
-        },
-        {
-          type: "arrow",
-          x: targetX - 30,
-          y: targetY + 70,
-          width: 220,
-          height: 0,
-          strokeColor: "#94a3b8",
-          strokeStyle: "dashed",
-        },
-        {
-          type: "ellipse",
-          x: targetX + 10,
-          y: targetY + 55,
-          width: 32,
-          height: 32,
-          strokeColor: "#ef4444",
-          backgroundColor: "#fee2e2",
-        },
-        {
-          type: "ellipse",
-          x: targetX + 118,
-          y: targetY + 55,
-          width: 32,
-          height: 32,
-          strokeColor: "#ef4444",
-          backgroundColor: "#fee2e2",
-        },
-        {
-          type: "arrow",
-          x: targetX + 180,
-          y: targetY + 40,
-          width: 80,
-          height: 0,
-          strokeColor: "#3b82f6",
-        },
-        {
-          type: "rectangle",
-          x: targetX + 280,
-          y: targetY - 20,
-          width: 350,
-          height: 230,
+          width: 320,
+          height: 160,
           strokeColor: "#6366f1",
           backgroundColor: "#e0e7ff",
           fillStyle: "hachure",
-          text: `✨ Visual Lesson: Quadratic Roots\nStandard Form: ax² + bx + c = 0\n\nQuadratic Formula:\nx = (-b ± √(b² - 4ac)) / (2a)\n\nDiscriminant D = b² - 4ac:\n• D > 0: 2 Real Roots\n• D = 0: 1 Repeated Root\n• D < 0: Complex Roots`,
+          text: `✨ ${result.summary || "AI explanation"}\n${result.focusNote || "Appended in free space (no rewrite)."}`,
         },
       ];
 
       setIsDrawingLive(true);
-      await progressiveDrawOnCanvas(excalidrawAPI, fallback, {
-        shapeDelayMs: 240,
-        pointDelayMs: 14,
-        onSceneUpdate: (els) => setExcalidrawElements(els),
-      });
+      for (let i = 0; i < fallback.length; i++) {
+        await enqueueLiveDraw(fallback[i], i);
+      }
+      await drawQueueRef.current;
       setIsDrawingLive(false);
       setDrawStatus("");
     },
-    [excalidrawAPI]
+    [excalidrawAPI, deconflictDrawing, getLayoutContext, enqueueLiveDraw]
   );
 
-  /** Shared realtime analyze pipeline for canvas button + chat. */
+  /** Shared realtime analyze pipeline for canvas button, chat, and selection. */
   const runRealtimeAnalysis = async (opts: {
     promptText?: string;
     imageBase64?: string | null;
     openSolutionPanel?: boolean;
+    mode?: AnalysisMode;
+    selection?: readonly any[];
+    skipUserMessage?: boolean;
   }) => {
     if (isAnalyzing) return;
 
@@ -332,30 +354,66 @@ export default function Home() {
     streamAbortRef.current?.abort();
     const abort = new AbortController();
     streamAbortRef.current = abort;
+    aiSessionRef.current = `session-${Date.now()}`;
+
+    const selection = opts.selection || [];
+    const mode: AnalysisMode =
+      opts.mode ||
+      (selection.length > 0
+        ? "selection"
+        : opts.promptText?.trim()
+          ? "followup"
+          : "full");
 
     setIsAnalyzing(true);
-    setDrawStatus("Preparing canvas snapshot…");
+    setDrawStatus(
+      mode === "selection"
+        ? "Focusing on selection…"
+        : mode === "followup"
+          ? "Preparing targeted update…"
+          : "Preparing canvas snapshot…"
+    );
     drawQueueRef.current = Promise.resolve();
+
+    const layout = getLayoutContext(selection);
+    placementCtxRef.current = {
+      occupied: [...layout.occupied],
+      suggested: layout.suggestedPlacement,
+      batchResolved: false,
+      dx: 0,
+      dy: 0,
+    };
 
     const imageBase64 =
       opts.imageBase64 === undefined
         ? await exportExcalidrawSnapshot()
         : opts.imageBase64;
-    const existingSummary = getExistingElementsSummary();
+
+    const selBounds = selectionBoundsFromElements(selection);
+    const coordinates = selBounds || layout.suggestedPlacement;
     let streamedDrawCount = 0;
 
     try {
       const result = await streamAnalyze({
         imageBase64: imageBase64 || undefined,
-        coordinates: { x: 100, y: 100, width: 400, height: 300 },
+        coordinates,
         promptText: opts.promptText,
         userApiKey,
-        existingElementsSummary: existingSummary,
+        existingElementsSummary: layout.summary,
+        freeSpaceHints: layout.freeSpaceHints,
+        selectionSummary:
+          selection.length > 0 ? summarizeSelection(selection) : undefined,
+        suggestedPlacement: layout.suggestedPlacement,
+        conversationSnippet: getConversationSnippet(),
+        mode,
         signal: abort.signal,
         onEvent: async (event) => {
           if (event.type === "status") {
             setDrawStatus(event.message);
-            if (event.message.toLowerCase().includes("drawing")) {
+            if (
+              event.message.toLowerCase().includes("drawing") ||
+              event.message.toLowerCase().includes("append")
+            ) {
               setIsDrawingLive(true);
             }
           } else if (event.type === "draw") {
@@ -365,10 +423,13 @@ export default function Home() {
             setCurrentResult(event.data);
             if (opts.openSolutionPanel) setIsPanelOpen(true);
 
+            const focusPrefix = event.data.focusNote
+              ? `📍 ${event.data.focusNote}\n\n`
+              : "";
             const assistantMsg: ChatMessage = {
               id: `msg-${Date.now()}`,
               sender: "assistant",
-              text: event.data.summary,
+              text: `${focusPrefix}${event.data.summary}`,
               imageCrop: imageBase64 || undefined,
               analysisResult: event.data,
               timestamp: Date.now(),
@@ -380,10 +441,8 @@ export default function Home() {
         },
       });
 
-      // Wait for in-flight pencil animations to finish
       await drawQueueRef.current;
 
-      // If the model never streamed drawings mid-flight, animate full set now
       if (result && streamedDrawCount === 0) {
         await insertAiExplanationOnCanvas(result);
       }
@@ -404,7 +463,7 @@ export default function Home() {
 
   // Trigger Canvas Spatial AI Analysis (floating dock button)
   const handleAnalyzeCanvas = async () => {
-    await runRealtimeAnalysis({ openSolutionPanel: true });
+    await runRealtimeAnalysis({ openSolutionPanel: true, mode: "full" });
   };
 
   // Send Text Question in Right Chat Panel
@@ -428,9 +487,33 @@ export default function Home() {
     };
     setMessages((prev) => [...prev, userMsg]);
 
+    // If user has a canvas selection, treat chat as a selection follow-up
+    const hasSelection = selectedElements.length > 0;
     await runRealtimeAnalysis({
       promptText: text,
       imageBase64: finalCrop,
+      openSolutionPanel: false,
+      mode: hasSelection ? "selection" : "followup",
+      selection: hasSelection ? selectedElements : [],
+    });
+  };
+
+  /** Canvas-native query about the current selection (no chat required). */
+  const handleCanvasSelectionQuery = async (question: string) => {
+    if (selectedElements.length === 0) return;
+
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      sender: "user",
+      text: `📌 [Canvas selection · ${selectedElements.length} element(s)] ${question}`,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    await runRealtimeAnalysis({
+      promptText: question,
+      mode: "selection",
+      selection: selectedElements,
       openSolutionPanel: false,
     });
   };
@@ -472,7 +555,8 @@ export default function Home() {
       lineHeight: 1.25,
     };
 
-    const updated = [...currentElems, newTextElement];
+    const stamped = ensureUserProvenance(newTextElement as any);
+    const updated = [...currentElems, stamped];
     excalidrawAPI.updateScene({ elements: updated as any });
     setExcalidrawElements(updated);
   };
@@ -531,6 +615,7 @@ export default function Home() {
           <ExcalidrawCanvas
             onApiReady={(api) => setExcalidrawAPI(api)}
             onElementsChange={(elems) => setExcalidrawElements(elems)}
+            onSelectionChange={(selected) => setSelectedElements(selected)}
             initialElements={excalidrawElements}
           />
 
@@ -554,6 +639,35 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {/* Provenance legend */}
+          <div className="absolute top-4 left-4 z-30 pointer-events-none">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border bg-background/90 backdrop-blur text-[10px] font-medium text-muted-foreground shadow-sm">
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-sm bg-slate-500" /> USER
+              </span>
+              <span className="text-border">|</span>
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-sm bg-indigo-500" /> AI
+              </span>
+              <span className="hidden sm:inline text-[10px] opacity-80">
+                · select → ask without rewriting board
+              </span>
+            </div>
+          </div>
+
+          {/* Canvas-native selection query */}
+          <CanvasQueryBar
+            selectedCount={selectedElements.length}
+            selectionLabel={
+              selectedElements.length > 0
+                ? `${selectedElements.filter((e) => getElementSource(e) === "user").length} user · ${selectedElements.filter((e) => getElementSource(e) === "ai").length} AI — append-only answer`
+                : undefined
+            }
+            isAnalyzing={isAnalyzing}
+            onAsk={handleCanvasSelectionQuery}
+            onDismiss={() => setSelectedElements([])}
+          />
 
           {/* Floating AI Actions Dock */}
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 p-2 rounded-2xl border bg-background/90 backdrop-blur-xl shadow-2xl">
