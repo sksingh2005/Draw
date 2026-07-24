@@ -38,6 +38,8 @@ import {
   summarizeSelection,
   getElementSource,
   ensureUserProvenance,
+  filterOnlyUserElements,
+  setElementsLockState,
   type Bounds,
 } from "@/lib/canvas-provenance";
 import type { AnalysisMode } from "@/lib/prompts/whiteboard-professor";
@@ -619,6 +621,26 @@ export default function Home() {
     }
   };
 
+  const [isUserLocked, setIsUserLocked] = useState(false);
+
+  const handleClearAiOnly = () => {
+    if (!excalidrawAPI) return;
+    const currentElems = excalidrawAPI.getSceneElements();
+    const userOnly = filterOnlyUserElements(currentElems);
+    excalidrawAPI.updateScene({ elements: userOnly as any });
+    setExcalidrawElements(userOnly);
+  };
+
+  const handleToggleLockUserLayers = () => {
+    if (!excalidrawAPI) return;
+    const nextLockState = !isUserLocked;
+    setIsUserLocked(nextLockState);
+    const currentElems = excalidrawAPI.getSceneElements();
+    const updated = setElementsLockState(currentElems, "user", nextLockState);
+    excalidrawAPI.updateScene({ elements: updated as any });
+    setExcalidrawElements(updated);
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background font-sans">
       {/* Top Navbar */}
@@ -703,14 +725,12 @@ export default function Home() {
           {/* Canvas-native selection query */}
           <CanvasQueryBar
             selectedCount={selectedElements.length}
-            selectionLabel={
-              selectedElements.length > 0
-                ? `${selectedElements.filter((e) => getElementSource(e) === "user").length} user · ${selectedElements.filter((e) => getElementSource(e) === "ai").length} AI — append-only answer`
-                : undefined
-            }
             isAnalyzing={isAnalyzing}
-            onAsk={handleCanvasSelectionQuery}
-            onDismiss={() => setSelectedElements([])}
+            onSendQuery={handleCanvasSelectionQuery}
+            onClearSelection={() => setSelectedElements([])}
+            onClearAiOnly={handleClearAiOnly}
+            isUserLocked={isUserLocked}
+            onToggleLockUserLayers={handleToggleLockUserLayers}
           />
 
           {/* Floating AI Actions Dock */}

@@ -309,3 +309,26 @@ export function summarizeSelection(
     })
     .join("\n");
 }
+
+export function filterOnlyUserElements<T extends SceneElementLike>(elements: readonly T[]): T[] {
+  return elements.filter((e) => !e.isDeleted && getElementSource(e) !== "ai");
+}
+
+export function filterOnlyAiElements<T extends SceneElementLike>(elements: readonly T[]): T[] {
+  return elements.filter((e) => !e.isDeleted && getElementSource(e) === "ai");
+}
+
+export function setElementsLockState<T extends SceneElementLike>(
+  elements: readonly T[],
+  targetSource: "user" | "ai" | "all",
+  locked: boolean
+): T[] {
+  return elements.map((e) => {
+    if (e.isDeleted) return e;
+    const source = getElementSource(e);
+    if (targetSource === "all" || source === targetSource) {
+      return { ...e, locked };
+    }
+    return e;
+  });
+}
