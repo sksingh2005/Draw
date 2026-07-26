@@ -34,6 +34,7 @@ import {
 import {
   buildLayoutMap,
   resolveNonOverlappingDrawings,
+  boundsOverlap,
   selectionBoundsFromElements,
   summarizeSelection,
   getElementSource,
@@ -212,10 +213,9 @@ export default function Home() {
   /** Shift a single drawing into free space if it would overlap occupied content. */
   const deconflictDrawing = useCallback((item: AiCanvasElement): AiCanvasElement => {
     const ctx = placementCtxRef.current;
-    if (!ctx.occupied.length) return item;
-
+    
     // Resolve whole-batch offset once using first drawing + suggested slot
-    if (!ctx.batchResolved) {
+    if (!ctx.batchResolved && ctx.occupied.length > 0) {
       const [shifted] = resolveNonOverlappingDrawings(
         [item],
         ctx.occupied,
@@ -226,22 +226,42 @@ export default function Home() {
       ctx.batchResolved = true;
     }
 
-    const next = {
+    let next = {
       ...item,
       x: item.x + ctx.dx,
       y: item.y + ctx.dy,
     };
 
+    const itemWidth = Math.max(120, next.width || 120);
+    const itemHeight = Math.max(60, next.height || 60);
+
+    // Don't let freedraw accents push whole layout boxes
+    const isAccentFreedraw = item.type === "freedraw";
+
+    if (!isAccentFreedraw && ctx.occupied.length > 0) {
+      let attempts = 0;
+      while (attempts < 15) {
+        const candidateBounds = { x: next.x, y: next.y, width: itemWidth, height: itemHeight };
+        const hasOverlap = ctx.occupied.some((o) => boundsOverlap(candidateBounds, o, 16));
+
+        if (!hasOverlap) break;
+
+        // Shift down by itemHeight + 24 to stack cleanly if overlapping
+        next.y += itemHeight + 24;
+        attempts++;
+      }
+    }
+
     // Track newly claimed space so later shapes in this turn don't stack
-    ctx.occupied = [
-      ...ctx.occupied,
-      {
+    if (!isAccentFreedraw) {
+      ctx.occupied.push({
         x: next.x,
         y: next.y,
-        width: Math.max(1, next.width || 80),
-        height: Math.max(1, next.height || 40),
-      },
-    ];
+        width: itemWidth,
+        height: itemHeight,
+      });
+    }
+
     return next;
   }, []);
 

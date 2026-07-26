@@ -136,7 +136,13 @@ export function aiElementToExcalidraw(
   }
 
   if (item.type === "text") {
-    const text = item.text || item.label || "";
+    const rawText = item.text || item.label || "";
+    const formattedText = wrapText(rawText, 45);
+    const fontSize = item.fontSize || 16;
+    const textBounds = calcTextBounds(formattedText, fontSize);
+    const width = Math.max(item.width || 0, textBounds.width + 20);
+    const height = Math.max(item.height || 0, textBounds.height + 10);
+
     elements.push(
       baseProps(
         {
@@ -144,20 +150,20 @@ export function aiElementToExcalidraw(
           type: "text",
           x: item.x,
           y: item.y,
-          width: item.width || 240,
-          height: item.height || 40,
+          width,
+          height,
           strokeColor: strokeColor === "#6366f1" ? "#1e1b4b" : strokeColor,
           backgroundColor: "transparent",
           fillStyle: "hachure",
           strokeWidth: 1,
           roundness: null,
-          text,
-          fontSize: item.fontSize || 16,
+          text: formattedText,
+          fontSize,
           fontFamily: 1,
           textAlign: "left",
           verticalAlign: "top",
           containerId: null,
-          originalText: text,
+          originalText: formattedText,
           autoResize: true,
           lineHeight: 1.25,
         },

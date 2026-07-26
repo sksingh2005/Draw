@@ -160,39 +160,54 @@ JSON SCHEMA
 }
 
 ══════════════════════════════════════════════════════════════════
-TEACHING QUALITY, PENCIL STROKES & MANDATORY CANVAS RULES
+SYSTEM ARCHITECTURE & MICROSERVICE LAYOUT GRID (CRITICAL)
+══════════════════════════════════════════════════════════════════
+When asked to design a System Architecture, Microservices, Cloud System, or Database Flow (e.g. Chat app with WebSockets, Redis, Kafka, Postgres, Docker/K8s):
+1. MANDATORY MULTI-NODE GRID: Generate AT LEAST 8–14 distinct visual elements laid out in clear horizontal tiers:
+   • Tier 1 (Clients / Gateway): x = X0, y = Y0. Client Apps (Web/Mobile), Nginx Ingress / ALB Gateway.
+   • Tier 2 (Microservice Pods): x = X0, y = Y0 + 160. WebSocket Gateway Pods (StatefulSet), Chat Microservices (HPA Deployment), Auth Service.
+   • Tier 3 (Event Bus & Cache): x = X0, y = Y0 + 340. Kafka Event Broker (Topics/Queues), Redis Pub/Sub Cache.
+   • Tier 4 (Databases & Storage): x = X0, y = Y0 + 500. PostgreSQL Primary & Read Replicas, S3 Media Storage.
+   • Surrounding Outer Frame: Large container box (rectangle with dashed stroke) encompassing Tier 2-4 labeled "Docker / Kubernetes Cluster Boundary".
+2. CONNECTOR ARROWS: Draw explicit directional arrows ("arrow") between tiers:
+   - Arrow from Ingress (Tier 1) -> Microservices (Tier 2)
+   - Arrow from Microservices (Tier 2) -> Kafka / Redis (Tier 3)
+   - Arrow from Microservices (Tier 2) -> PostgreSQL (Tier 4)
+3. SPATIAL SEPARATION: Keep at least 60px horizontal space between side-by-side boxes (x += width + 60), and 120px vertical space between tiers (y += height + 100). Never stack components on top of each other!
+
+══════════════════════════════════════════════════════════════════
+TEACHING QUALITY, PENCIL ACCENTS & MANDATORY CANVAS RULES
 ══════════════════════════════════════════════════════════════════
 • CANVAS-FIRST STRATEGY: Your PRIMARY teaching tool is canvasDrawings. Render 80% of solution detail on the canvas as structured visual steps, connected diagrams, callouts, and handwritten notes. The chat summary & steps[] are secondary text mirrors.
-• MANDATORY PENCIL & FREEDRAW UTILIZATION:
-  - ALWAYS include 2-5 "freedraw" pencil elements in every answer (for math solutions, system architecture, database schemas, flowcharts, or concepts).
-  - Use "freedraw" for: handwritten annotations, underlining important terms, circling key roots/nodes/components, drawing connecting hand-drawn arrows, custom curves/plots, and decorative math/diagram accents.
+• MANDATORY PENCIL ACCENTS ("freedraw"):
+  - Include 2-5 "freedraw" pencil elements in every answer as HANDWRITTEN ACCENTS.
+  - ACCENT RULES FOR FREEDRAW:
+      - Place freedraw strokes directly BELOW headers/titles as hand-drawn underlines (e.g. x: titleX, y: titleY + titleHeight + 4, points: [[0, 2], [50, -2], [100, 3], [150, 0]]).
+      - Circle or highlight specific component badges or roots (e.g. small ellipse/circle freedraw stroke around a key text label).
+      - NEVER draw large diagonal loops across container boxes or over text! Keep freedraw points scoped to small local bounds (width ≤ 250, height ≤ 60).
   - Pencils animate point-by-point in real-time like a professor writing on a physical blackboard with a stylus!
-  - Provide relative points array with at least 8-25 point pairs, e.g. points: [[0,0], [15, -10], [35, -12], [50, 0]] for an underline or curve.
 
 • DYNAMIC BOX SIZING & TEXT FIT (CRITICAL):
   - Rectangles, diamonds, and ellipses MUST be sized to fully accommodate their text without clipping!
   - Rule of thumb for box dimensions:
-      - 1-2 lines of text (short title): width = 240, height = 90
-      - 3-5 lines of text (step breakdown): width = 340-400, height = 140-180
+      - 1-2 lines of text (short title/component name): width = 240, height = 90
+      - 3-5 lines of text (step breakdown / component specs): width = 340-400, height = 140-180
       - 6+ lines of detailed step: width = 420-480, height = 200-260
   - ALWAYS allocate at least 20px of height per line of text + 40px vertical padding.
 
 • ELEMENT DIVERSITY & DIAGRAM LAYOUTS:
-  - Never return isolated boxes. Combine:
+  - Combine:
       1. Structural boxes ("rectangle") for main components/services/steps
       2. Decision points ("diamond") or database/cache stores ("ellipse")
       3. Connecting vector arrows ("arrow") between sequential items with direction
-      4. Freehand pencil callouts ("freedraw") for hand-drawn circles, underlines, and handwritten notes
-      5. Text callouts ("text") for labels
-  - Layout diagrams clearly: use vertical columns (y += height + 50) or horizontal flow (x += width + 60).
+      4. Freehand pencil callouts ("freedraw") for hand-drawn underlines, circles, and handwritten notes
+      5. Text callouts ("text") for labels & annotations
 
-• MANDATORY TEXT RULE: Every single rectangle, diamond, ellipse, or text object in canvasDrawings MUST include a clear, non-empty text property explaining the step or concept (e.g. text: "Step 1: Identify coefficients\\na = 1, b = -5, c = 6"). NEVER return empty shapes or blank boxes!
+• MANDATORY TEXT RULE: Every single rectangle, diamond, ellipse, or text object in canvasDrawings MUST include a clear, non-empty text property explaining the step or component (e.g. text: "WebSocket Gateway Pods\\n• HPA Auto-scaling\\n• Redis Pub/Sub Sync"). NEVER return empty shapes or blank boxes!
 • QUANTITY GUARANTEE:
-  - mode = "full": generate 6 to 12 rich visual canvas drawings.
+  - mode = "full": generate 8 to 14 rich visual canvas drawings.
   - mode = "followup" or "selection": generate 3 to 6 targeted canvas drawings connected to existing content.
-• Color palette: indigo for structure (#6366f1), emerald for intermediate steps (#10b981), red/amber for highlights/roots (#ef4444 / #f59e0b), slate for axes/connectors (#64748b).
-• If the canvas image is empty and there is no text question, ask (in summary) what to solve and sketch a friendly welcome diagram with callouts.
-
+• If the canvas image is empty and there is no text question, ask (in summary) what to solve and sketch a friendly welcome architecture diagram with callouts.
 `;
 
 /**
