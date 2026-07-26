@@ -170,8 +170,23 @@ export function aiElementToExcalidraw(
   // rectangle | diamond | ellipse
   const shapeType =
     item.type === "diamond" || item.type === "ellipse" ? item.type : "rectangle";
-  const itemText = item.text || item.label;
-  const textId = itemText ? randId(`ai-text-${index}`) : null;
+  const rawItemText = item.text || item.label;
+  
+  // Word wrap text if long
+  const formattedText = rawItemText ? wrapText(rawItemText, 38) : undefined;
+  const textId = formattedText ? randId(`ai-text-${index}`) : null;
+
+  // Calculate dynamic dimensions to guarantee NO text clipping
+  const fontSize = item.fontSize || 15;
+  const paddingX = 20;
+  const paddingY = 16;
+  const textDimensions = formattedText ? calcTextBounds(formattedText, fontSize) : { width: 0, height: 0 };
+  
+  const minRequiredWidth = formattedText ? textDimensions.width + paddingX * 2 : 120;
+  const minRequiredHeight = formattedText ? textDimensions.height + paddingY * 2 : 80;
+
+  const boxWidth = Math.max(item.width || 260, minRequiredWidth);
+  const boxHeight = Math.max(item.height || 120, minRequiredHeight);
 
   elements.push(
     baseProps(
@@ -180,8 +195,8 @@ export function aiElementToExcalidraw(
         type: shapeType,
         x: item.x,
         y: item.y,
-        width: item.width || 260,
-        height: item.height || 120,
+        width: boxWidth,
+        height: boxHeight,
         strokeColor,
         backgroundColor:
           backgroundColor === "transparent" && shapeType === "rectangle"
@@ -196,29 +211,29 @@ export function aiElementToExcalidraw(
     )
   );
 
-  if (itemText && textId) {
+  if (formattedText && textId) {
     elements.push(
       baseProps(
         {
           id: textId,
           type: "text",
-          x: item.x + 14,
-          y: item.y + 14,
-          width: Math.max(40, (item.width || 260) - 28),
-          height: Math.max(24, (item.height || 120) - 28),
+          x: item.x + paddingX,
+          y: item.y + paddingY,
+          width: boxWidth - paddingX * 2,
+          height: boxHeight - paddingY * 2,
           strokeColor: "#1e1b4b",
           backgroundColor: "transparent",
           fillStyle: "hachure",
           strokeWidth: 1,
           roundness: null,
-          text: itemText,
-          fontSize: item.fontSize || 15,
+          text: formattedText,
+          fontSize,
           fontFamily: 1,
           textAlign: "left",
           verticalAlign: "top",
-          containerId: null, // Render as overlaid text note to guarantee 100% visibility
-          originalText: itemText,
-          autoResize: false,
+          containerId: null,
+          originalText: formattedText,
+          autoResize: true,
           lineHeight: 1.25,
         },
         provenance
@@ -227,6 +242,47 @@ export function aiElementToExcalidraw(
   }
 
   return elements;
+}
+
+/** Word-wrap long single lines into ~maxCharsPerLine columns */
+function wrapText(text: string, maxCharsPerLine = 38): string {
+  const rawLines = text.split("\n");
+  const wrappedLines: string[] = [];
+
+  for (const line of rawLines) {
+    if (line.length <= maxCharsPerLine) {
+      wrappedLines.push(line);
+      continue;
+    }
+
+    const words = line.split(" ");
+    let current = "";
+
+    for (const word of words) {
+      if ((current + " " + word).trim().length <= maxCharsPerLine) {
+        current = (current + " " + word).trim();
+      } else {
+        if (current) wrappedLines.push(current);
+        current = word;
+      }
+    }
+    if (current) wrappedLines.push(current);
+  }
+
+  return wrappedLines.join("\n");
+}
+
+/** Calculate pixel bounding box for multiline text */
+function calcTextBounds(text: string, fontSize: number): { width: number; height: number } {
+  const lines = text.split("\n");
+  const maxLineLength = Math.max(...lines.map((l) => l.length), 1);
+  const charWidthRatio = fontSize * 0.58;
+  const lineHeight = fontSize * 1.35;
+
+  return {
+    width: Math.round(maxLineLength * charWidthRatio),
+    height: Math.round(lines.length * lineHeight),
+  };
 }
 
 function sleep(ms: number): Promise<void> {
