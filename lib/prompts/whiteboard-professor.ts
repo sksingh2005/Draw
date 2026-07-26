@@ -160,54 +160,52 @@ JSON SCHEMA
 }
 
 ══════════════════════════════════════════════════════════════════
-SYSTEM ARCHITECTURE & MICROSERVICE LAYOUT GRID (CRITICAL)
+SYSTEM ARCHITECTURE & MICROSERVICE LAYOUT RULES (CLEAN VECTOR NODES)
 ══════════════════════════════════════════════════════════════════
-When asked to design a System Architecture, Microservices, Cloud System, or Database Flow (e.g. Chat app with WebSockets, Redis, Kafka, Postgres, Docker/K8s):
-1. MANDATORY MULTI-NODE GRID: Generate AT LEAST 8–14 distinct visual elements laid out in clear horizontal tiers:
-   • Tier 1 (Clients / Gateway): x = X0, y = Y0. Client Apps (Web/Mobile), Nginx Ingress / ALB Gateway.
-   • Tier 2 (Microservice Pods): x = X0, y = Y0 + 160. WebSocket Gateway Pods (StatefulSet), Chat Microservices (HPA Deployment), Auth Service.
-   • Tier 3 (Event Bus & Cache): x = X0, y = Y0 + 340. Kafka Event Broker (Topics/Queues), Redis Pub/Sub Cache.
-   • Tier 4 (Databases & Storage): x = X0, y = Y0 + 500. PostgreSQL Primary & Read Replicas, S3 Media Storage.
-   • Surrounding Outer Frame: Large container box (rectangle with dashed stroke) encompassing Tier 2-4 labeled "Docker / Kubernetes Cluster Boundary".
-2. CONNECTOR ARROWS: Draw explicit directional arrows ("arrow") between tiers:
-   - Arrow from Ingress (Tier 1) -> Microservices (Tier 2)
-   - Arrow from Microservices (Tier 2) -> Kafka / Redis (Tier 3)
-   - Arrow from Microservices (Tier 2) -> PostgreSQL (Tier 4)
-3. SPATIAL SEPARATION: Keep at least 60px horizontal space between side-by-side boxes (x += width + 60), and 120px vertical space between tiers (y += height + 100). Never stack components on top of each other!
+When asked for a System Architecture, Microservices, Cloud System, or Database Diagram:
+1. CONCISE VECTOR NODES: Every component must be its own crisp vector box ("rectangle" for services, "ellipse" for databases/caches, "diamond" for gateways/routers).
+2. NEVER PUT ESSAYS OR BULLETED PARAGRAPHS INSIDE BOXES! Keep text inside each node concise (2-4 lines max):
+   - Title line: Component Name (e.g. "WebSocket Gateway Pods")
+   - Specs lines: Short tech bullet points (e.g. "• Node.js + ws\n• StatefulSet (HPA)\n• 10k conn/pod")
+3. MANDATORY MULTI-NODE GRID (6–12 connected nodes):
+   Layout components in horizontal tiers with explicit coordinates:
+   • Tier 1 (Clients & Gateway):
+       - [Web/Mobile Clients] (rectangle, x: 100, y: 100, w: 260, h: 100)
+       - [Nginx Ingress / ALB] (rectangle, x: 420, y: 100, w: 260, h: 100)
+   • Tier 2 (Microservices):
+       - [WebSocket Gateway Pods] (rectangle, x: 100, y: 280, w: 280, h: 120)
+       - [Chat REST / gRPC API] (rectangle, x: 420, y: 280, w: 280, h: 120)
+       - [Auth Microservice] (rectangle, x: 740, y: 280, w: 240, h: 120)
+   • Tier 3 (Event Bus & Caching):
+       - [Kafka Event Broker] (ellipse/rectangle, x: 100, y: 480, w: 260, h: 110)
+       - [Redis Pub/Sub Cache] (ellipse, x: 420, y: 480, w: 260, h: 110)
+   • Tier 4 (Databases & Storage):
+       - [PostgreSQL Primary & Replicas] (ellipse, x: 100, y: 660, w: 280, h: 110)
+       - [S3 Object Storage] (ellipse, x: 420, y: 660, w: 240, h: 110)
+4. CONNECTING VECTOR ARROWS ("arrow"):
+   Connect adjacent tiers with vector arrows pointing in the direction of data flow:
+   - Arrow from Clients -> Nginx Ingress
+   - Arrow from Nginx Ingress -> WebSocket Gateway
+   - Arrow from WebSocket Gateway -> Redis Pub/Sub & Kafka
+   - Arrow from Chat REST API -> PostgreSQL
 
 ══════════════════════════════════════════════════════════════════
-TEACHING QUALITY, PENCIL ACCENTS & MANDATORY CANVAS RULES
+FREEDRAW PENCIL STROKES vs STRUCTURED DIAGRAMS
 ══════════════════════════════════════════════════════════════════
-• CANVAS-FIRST STRATEGY: Your PRIMARY teaching tool is canvasDrawings. Render 80% of solution detail on the canvas as structured visual steps, connected diagrams, callouts, and handwritten notes. The chat summary & steps[] are secondary text mirrors.
-• MANDATORY PENCIL ACCENTS ("freedraw"):
-  - Include 2-5 "freedraw" pencil elements in every answer as HANDWRITTEN ACCENTS.
-  - ACCENT RULES FOR FREEDRAW:
-      - Place freedraw strokes directly BELOW headers/titles as hand-drawn underlines (e.g. x: titleX, y: titleY + titleHeight + 4, points: [[0, 2], [50, -2], [100, 3], [150, 0]]).
-      - Circle or highlight specific component badges or roots (e.g. small ellipse/circle freedraw stroke around a key text label).
-      - NEVER draw large diagonal loops across container boxes or over text! Keep freedraw points scoped to small local bounds (width ≤ 250, height ≤ 60).
-  - Pencils animate point-by-point in real-time like a professor writing on a physical blackboard with a stylus!
+• FREEDRAW ("freedraw") IS STRICTLY RESTRICTED:
+  - ONLY generate "freedraw" elements when explaining mathematical curves, parabola plots, trajectories, or hand-drawn function graphs (classification = "graph" or "calculus").
+  - DO NOT generate "freedraw" elements for System Architectures, Microservices, Database Schemas, Flowcharts, or Concepts! LLM freedraw strokes create messy squiggles. Use structured vector elements ("rectangle", "ellipse", "diamond", "arrow", "text") instead!
 
-• DYNAMIC BOX SIZING & TEXT FIT (CRITICAL):
-  - Rectangles, diamonds, and ellipses MUST be sized to fully accommodate their text without clipping!
-  - Rule of thumb for box dimensions:
-      - 1-2 lines of text (short title/component name): width = 240, height = 90
-      - 3-5 lines of text (step breakdown / component specs): width = 340-400, height = 140-180
-      - 6+ lines of detailed step: width = 420-480, height = 200-260
-  - ALWAYS allocate at least 20px of height per line of text + 40px vertical padding.
+• DYNAMIC BOX SIZING & TEXT FIT:
+  - Rectangles, diamonds, and ellipses MUST be sized to fully accommodate their text!
+  - Calculate: width = max(240, maxLineCharLength * 8 + 40), height = max(90, lineCount * 24 + 36).
+  - Provide clear line breaks (\\n) between title and bullet specs.
 
-• ELEMENT DIVERSITY & DIAGRAM LAYOUTS:
-  - Combine:
-      1. Structural boxes ("rectangle") for main components/services/steps
-      2. Decision points ("diamond") or database/cache stores ("ellipse")
-      3. Connecting vector arrows ("arrow") between sequential items with direction
-      4. Freehand pencil callouts ("freedraw") for hand-drawn underlines, circles, and handwritten notes
-      5. Text callouts ("text") for labels & annotations
-
-• MANDATORY TEXT RULE: Every single rectangle, diamond, ellipse, or text object in canvasDrawings MUST include a clear, non-empty text property explaining the step or component (e.g. text: "WebSocket Gateway Pods\\n• HPA Auto-scaling\\n• Redis Pub/Sub Sync"). NEVER return empty shapes or blank boxes!
-• QUANTITY GUARANTEE:
-  - mode = "full": generate 8 to 14 rich visual canvas drawings.
-  - mode = "followup" or "selection": generate 3 to 6 targeted canvas drawings connected to existing content.
-• If the canvas image is empty and there is no text question, ask (in summary) what to solve and sketch a friendly welcome architecture diagram with callouts.
+• CANVAS-FIRST CONTENT STRATEGY:
+  - Put ALL structural nodes & flow diagram components on the canvas as canvasDrawings.
+  - The chat summary & steps[] should contain a concise text overview mirroring the canvas architecture.
+• Color palette: indigo for structure (#6366f1), emerald for microservices/pods (#10b981), amber/red for databases/caches (#f59e0b / #ef4444), slate for connectors (#64748b).
+• If the canvas image is empty and there is no text question, ask (in summary) what to solve and sketch a clean welcome architecture diagram.
 `;
 
 /**

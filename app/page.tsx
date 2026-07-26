@@ -232,28 +232,35 @@ export default function Home() {
       y: item.y + ctx.dy,
     };
 
-    const itemWidth = Math.max(120, next.width || 120);
-    const itemHeight = Math.max(60, next.height || 60);
+    // Calculate realistic bounding box for shapes & text callouts
+    let itemWidth = Math.max(120, next.width || 120);
+    let itemHeight = Math.max(60, next.height || 60);
 
-    // Don't let freedraw accents push whole layout boxes
-    const isAccentFreedraw = item.type === "freedraw";
+    if (item.text) {
+      const lines = item.text.split("\n");
+      const maxLineLen = Math.max(...lines.map((l) => l.length), 1);
+      itemWidth = Math.max(itemWidth, Math.min(420, maxLineLen * 9 + 30));
+      itemHeight = Math.max(itemHeight, lines.length * 24 + 30);
+    }
 
-    if (!isAccentFreedraw && ctx.occupied.length > 0) {
+    const isConnector = item.type === "arrow" || item.type === "line" || item.type === "freedraw";
+
+    if (!isConnector && ctx.occupied.length > 0) {
       let attempts = 0;
-      while (attempts < 15) {
-        const candidateBounds = { x: next.x, y: next.y, width: itemWidth, height: itemHeight };
-        const hasOverlap = ctx.occupied.some((o) => boundsOverlap(candidateBounds, o, 16));
+      while (attempts < 20) {
+        const candidate = { x: next.x, y: next.y, width: itemWidth, height: itemHeight };
+        const overlappingItem = ctx.occupied.find((o) => boundsOverlap(candidate, o, 16));
 
-        if (!hasOverlap) break;
+        if (!overlappingItem) break;
 
-        // Shift down by itemHeight + 24 to stack cleanly if overlapping
-        next.y += itemHeight + 24;
+        // Shift down past the overlapping element's bottom boundary + padding
+        next.y = overlappingItem.y + overlappingItem.height + 24;
         attempts++;
       }
     }
 
-    // Track newly claimed space so later shapes in this turn don't stack
-    if (!isAccentFreedraw) {
+    // Register container shapes in occupied tracking
+    if (!isConnector) {
       ctx.occupied.push({
         x: next.x,
         y: next.y,
