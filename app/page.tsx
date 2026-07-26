@@ -261,16 +261,18 @@ export default function Home() {
         for (const el of built) {
           if (el.type === "freedraw") {
             const scene = await animateFreedraw(excalidrawAPI, el, {
-              pointDelayMs: 14,
+              pointDelayMs: 28, // Natural human pencil handwriting pace
               onFrame: (els) => setExcalidrawElements(els),
             });
             setExcalidrawElements(scene);
           } else {
             const scene = appendToScene(excalidrawAPI, [el]);
             setExcalidrawElements(scene);
-            await new Promise((r) => setTimeout(r, 160));
+            await new Promise((r) => setTimeout(r, 450)); // Thoughtful human pause between shapes
           }
         }
+        // Small pause between distinct canvas drawing objects
+        await new Promise((r) => setTimeout(r, 200));
       });
       return drawQueueRef.current;
     },
@@ -287,7 +289,6 @@ export default function Home() {
         drawings = drawings.map((d) => deconflictDrawing(d));
         setIsDrawingLive(true);
         setDrawStatus("Animating explanation on canvas…");
-        // progressiveDraw uses aiElementToExcalidraw without session — stamp via map
         const stamped = drawings;
         for (let i = 0; i < stamped.length; i++) {
           setDrawStatus(`Drawing ${stamped[i].type} #${i + 1}…`);
@@ -298,17 +299,17 @@ export default function Home() {
           for (const el of built) {
             if (el.type === "freedraw") {
               const scene = await animateFreedraw(excalidrawAPI, el, {
-                pointDelayMs: 14,
+                pointDelayMs: 28, // Natural human pencil stroke speed
                 onFrame: (els) => setExcalidrawElements(els),
               });
               setExcalidrawElements(scene);
             } else {
               const scene = appendToScene(excalidrawAPI, [el]);
               setExcalidrawElements(scene);
-              await new Promise((r) => setTimeout(r, 160));
+              await new Promise((r) => setTimeout(r, 450));
             }
           }
-          await new Promise((r) => setTimeout(r, 200));
+          await new Promise((r) => setTimeout(r, 350));
         }
         setIsDrawingLive(false);
         setDrawStatus("");
