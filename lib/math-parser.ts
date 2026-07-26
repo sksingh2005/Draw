@@ -381,7 +381,7 @@ export function createFallbackResult(
         type: "rectangle",
         x: targetX + 320,
         y: targetY,
-        width: 320,
+        width: 360,
         height: 180,
         strokeColor: "#6366f1",
         backgroundColor: "#e0e7ff",
@@ -389,13 +389,31 @@ export function createFallbackResult(
         text: "✨ AI Solution:\nx² - 5x + 6 = 0\nRoots: x = 2, x = 3"
       },
       {
+        type: "freedraw",
+        x: targetX + 330,
+        y: targetY + 175,
+        width: 140,
+        height: 20,
+        strokeColor: "#ef4444",
+        strokeWidth: 3,
+        points: [
+          [0, 5],
+          [20, 2],
+          [45, 8],
+          [70, 3],
+          [95, 7],
+          [120, 2],
+          [140, 5]
+        ]
+      },
+      {
         type: "ellipse",
         x: targetX + 340,
-        y: targetY + 120,
-        width: 140,
-        height: 40,
-        strokeColor: "#ef4444",
-        text: "Root 1: x = 2"
+        y: targetY + 190,
+        width: 180,
+        height: 50,
+        strokeColor: "#10b981",
+        text: "Roots: x = 2, x = 3"
       }
     ],
     createdAt: Date.now()
