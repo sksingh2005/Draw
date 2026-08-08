@@ -8,7 +8,6 @@ import { ExcalidrawCanvas, ExcalidrawImperativeAPI } from "@/components/canvas/E
 import { CanvasQueryBar } from "@/components/canvas/CanvasQueryBar";
 import { MathPresetLibrary, MathTemplate } from "@/components/math/MathPresetLibrary";
 import { SolutionPanel } from "@/components/canvas/SolutionPanel";
-import { ApiKeyModal } from "@/components/layout/ApiKeyModal";
 import { MathAnalysisResult, AiCanvasElement } from "@/lib/math-parser";
 import { Button } from "@/components/ui/button";
 import { Sparkles, BookOpen, Pencil } from "lucide-react";
@@ -24,6 +23,7 @@ import {
   exportPageJson,
   exportAllPagesJson,
   parseAndValidateWorkspaceImport,
+  getPageElements,
 } from "@/lib/workspace-store";
 import { streamAnalyze } from "@/lib/analyze-client";
 import {
@@ -37,7 +37,7 @@ import {
   boundsOverlap,
   selectionBoundsFromElements,
   summarizeSelection,
-  getElementSource,
+  AI_DIAGRAM_KEY,
   ensureUserProvenance,
   filterOnlyUserElements,
   setElementsLockState,
@@ -53,12 +53,10 @@ export default function Home() {
   const [activePageId, setActivePageIdState] = useState<string>("page-default-math");
   const [activePage, setActivePage] = useState<WorkspacePage | null>(null);
 
-  // Layout UI Toggles & Modals
+  // Layout UI Toggles & Panels
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(true);
   const [isCanvasMaximized, setIsCanvasMaximized] = useState<boolean>(false);
-  const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
-  const [userApiKey, setUserApiKey] = useState<string>("");
 
   // Canvas elements & Chat state
   const [excalidrawElements, setExcalidrawElements] = useState<readonly any[]>([]);
@@ -75,6 +73,7 @@ export default function Home() {
   const streamAbortRef = useRef<AbortController | null>(null);
   const drawQueueRef = useRef<Promise<void>>(Promise.resolve());
   const aiSessionRef = useRef<string>(`session-${Date.now()}`);
+  const activeDiagramIdRef = useRef<string | undefined>(undefined);
   const placementCtxRef = useRef<{
     occupied: Bounds[];
     suggested: Bounds | null;
@@ -83,7 +82,7 @@ export default function Home() {
     dy: number;
   }>({ occupied: [], suggested: null, batchResolved: false, dx: 0, dy: 0 });
 
-  // Load initial pages & API key
+  // Load initial pages
   useEffect(() => {
     const loadedPages = getSavedPages();
     setPages(loadedPages);
@@ -92,25 +91,17 @@ export default function Home() {
     if (current) {
       setActivePageIdState(current.id);
       setActivePage(current);
-      setExcalidrawElements((current.strokes as any) || []);
+      setExcalidrawElements(getPageElements(current) as any);
       setMessages(current.messages || []);
     }
-
-    const savedKey = localStorage.getItem("gemini_api_key") || "";
-    setUserApiKey(savedKey);
   }, []);
-
-  const handleSaveApiKey = (key: string) => {
-    setUserApiKey(key);
-    localStorage.setItem("gemini_api_key", key);
-  };
 
   // Save workspace state
   useEffect(() => {
     if (!activePage) return;
     const updatedPage: WorkspacePage = {
       ...activePage,
-      strokes: excalidrawElements as any,
+      excalidrawElements: excalidrawElements as any,
       messages,
       updatedAt: Date.now(),
     };
@@ -146,7 +137,7 @@ export default function Home() {
     const target = pages.find((p) => p.id === id);
     if (target) {
       setActivePage(target);
-      const newElements = (target.strokes as any) || [];
+      const newElements = getPageElements(target) as any;
       setExcalidrawElements(newElements);
       setMessages(target.messages || []);
       setCurrentResult(null);
@@ -284,6 +275,7 @@ export default function Home() {
         const built = aiElementToExcalidraw(safe, index, {
           sessionId: aiSessionRef.current,
           role: "explanation",
+          diagramId: activeDiagramIdRef.current,
         });
         for (const el of built) {
           if (el.type === "freedraw") {
@@ -322,6 +314,7 @@ export default function Home() {
           const built = aiElementToExcalidraw(stamped[i], i, {
             sessionId: aiSessionRef.current,
             role: "explanation",
+            diagramId: activeDiagramIdRef.current,
           });
           for (const el of built) {
             if (el.type === "freedraw") {
@@ -381,18 +374,17 @@ export default function Home() {
     mode?: AnalysisMode;
     selection?: readonly any[];
     skipUserMessage?: boolean;
+    diagramId?: string;
+    diagramTitle?: string;
   }) => {
     if (isAnalyzing) return;
-
-    if (!userApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
-      setApiKeyModalOpen(true);
-      return;
-    }
 
     streamAbortRef.current?.abort();
     const abort = new AbortController();
     streamAbortRef.current = abort;
     aiSessionRef.current = `session-${Date.now()}`;
+    const diagramId = opts.diagramId || `diagram-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    activeDiagramIdRef.current = diagramId;
 
     const selection = opts.selection || [];
     const mode: AnalysisMode =
@@ -436,7 +428,6 @@ export default function Home() {
         imageBase64: imageBase64 || undefined,
         coordinates,
         promptText: opts.promptText,
-        userApiKey,
         existingElementsSummary: layout.summary,
         freeSpaceHints: layout.freeSpaceHints,
         selectionSummary:
@@ -444,6 +435,8 @@ export default function Home() {
         suggestedPlacement: layout.suggestedPlacement,
         conversationSnippet: getConversationSnippet(),
         mode,
+        diagramId,
+        diagramTitle: opts.diagramTitle,
         signal: abort.signal,
         onEvent: async (event) => {
           if (event.type === "status") {
@@ -470,6 +463,9 @@ export default function Home() {
               text: `${focusPrefix}${event.data.summary}`,
               imageCrop: imageBase64 || undefined,
               analysisResult: event.data,
+              diagramId,
+              diagramTitle: event.data.diagramTitle,
+              mermaidCode: event.data.mermaidCode,
               timestamp: Date.now(),
             };
             setMessages((prev) => [...prev, assistantMsg]);
@@ -488,10 +484,7 @@ export default function Home() {
       if (err?.name === "AbortError") return;
       console.error("Realtime analysis failed:", err);
       const msg = err?.message || String(err);
-      if (msg.toLowerCase().includes("api key")) {
-        setApiKeyModalOpen(true);
-      }
-      alert(`Gemini AI Error: ${msg}`);
+      alert(`OpenAI Error: ${msg}`);
     } finally {
       setIsAnalyzing(false);
       setIsDrawingLive(false);
@@ -506,16 +499,12 @@ export default function Home() {
 
   // Send Text Question in Right Chat Panel
   const handleSendChatMessage = async (text: string, imageCrop?: string) => {
-    if (!userApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
-      setApiKeyModalOpen(true);
-      return;
-    }
-
     let finalCrop = imageCrop;
     if (!finalCrop) {
       finalCrop = (await exportExcalidrawSnapshot()) || undefined;
     }
 
+    const diagramId = `diagram-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: "user",
@@ -533,6 +522,8 @@ export default function Home() {
       openSolutionPanel: false,
       mode: hasSelection ? "selection" : "followup",
       selection: hasSelection ? selectedElements : [],
+      diagramId,
+      diagramTitle: text.trim().slice(0, 72) || "Canvas update",
     });
   };
 
@@ -540,6 +531,7 @@ export default function Home() {
   const handleCanvasSelectionQuery = async (question: string) => {
     if (selectedElements.length === 0) return;
 
+    const diagramId = `diagram-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: "user",
@@ -553,7 +545,28 @@ export default function Home() {
       mode: "selection",
       selection: selectedElements,
       openSolutionPanel: false,
+      diagramId,
+      diagramTitle: question.slice(0, 72),
     });
+  };
+
+  /** Re-select every native canvas element belonging to a previous AI diagram. */
+  const handleFocusDiagram = (diagramId: string) => {
+    if (!excalidrawAPI) return;
+    const matching = excalidrawAPI
+      .getSceneElements()
+      .filter(
+        (element: any) =>
+          !element.isDeleted && element.customData?.[AI_DIAGRAM_KEY] === diagramId
+      );
+    if (!matching.length) return;
+
+    const selectedElementIds = Object.fromEntries(
+      matching.map((element: any) => [String(element.id), true])
+    );
+    excalidrawAPI.updateScene({ appState: { selectedElementIds } });
+    setSelectedElements(matching);
+    excalidrawAPI.scrollToContent?.(matching, { fitToContent: true });
   };
 
   // Insert Formula Preset into Excalidraw Scene
@@ -684,8 +697,6 @@ export default function Home() {
         isAnalyzing={isAnalyzing}
         onAnalyzeCanvas={handleAnalyzeCanvas}
         onOpenPresetLibrary={() => setPresetLibraryOpen(true)}
-        hasApiKey={Boolean(userApiKey)}
-        onOpenApiKeyModal={() => setApiKeyModalOpen(true)}
         onToggleChat={() => setIsChatOpen((prev) => !prev)}
         isMaximized={isCanvasMaximized}
         onToggleMaximize={() => setIsCanvasMaximized((prev) => !prev)}
@@ -805,13 +816,6 @@ export default function Home() {
             onSelectTemplate={handleSelectTemplate}
           />
 
-          {/* Gemini API Key Configuration Modal */}
-          <ApiKeyModal
-            open={apiKeyModalOpen}
-            onOpenChange={setApiKeyModalOpen}
-            onSaveKey={handleSaveApiKey}
-            currentKey={userApiKey}
-          />
         </main>
 
         {/* Right LLM Chat & Analysis Panel */}
@@ -819,12 +823,10 @@ export default function Home() {
           <ChatPanel
             messages={messages}
             onSendMessage={handleSendChatMessage}
-            onAttachCanvasCrop={() => {
+            onFocusDiagram={handleFocusDiagram}
+            onAttachCanvasCrop={async () => {
               const target = selectedElements.length > 0 ? selectedElements : undefined;
-              exportExcalidrawSnapshot(target).then((crop) => {
-                if (crop) handleSendChatMessage("", crop);
-              });
-              return null;
+              return exportExcalidrawSnapshot(target);
             }}
             isOpen={isChatOpen}
             onToggleOpen={() => setIsChatOpen((prev) => !prev)}

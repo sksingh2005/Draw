@@ -84,6 +84,12 @@ export interface MathAnalysisResult {
   updateMode?: "append";
   /** What part of the board this answer attaches to. */
   focusNote?: string;
+  /** Stable client-generated identity for the canvas update. */
+  diagramId?: string;
+  /** A compact label for selecting this diagram again from chat history. */
+  diagramTitle?: string;
+  /** Optional Mermaid source for portable flowchart/schema/architecture diagrams. */
+  mermaidCode?: string;
   keyVariables: KeyVariable[];
   givenData: string[];
   steps: SolutionStep[];
@@ -99,7 +105,8 @@ export interface MathAnalysisResult {
  */
 export function parseMathAnalysisResponse(
   rawText: string,
-  coordinates: CanvasCoordinates = { x: 100, y: 100, width: 300, height: 200 }
+  coordinates: CanvasCoordinates = { x: 100, y: 100, width: 300, height: 200 },
+  diagram?: { id?: string; title?: string }
 ): MathAnalysisResult {
   const resultId = `sol-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   
@@ -124,6 +131,9 @@ export function parseMathAnalysisResponse(
       summary: parsed.summary || "Step-by-step breakdown of the detected problem or system design.",
       updateMode: "append",
       focusNote: parsed.focusNote || undefined,
+      diagramId: diagram?.id,
+      diagramTitle: parsed.diagramTitle || diagram?.title || parsed.summary?.slice(0, 72) || "Canvas diagram",
+      mermaidCode: sanitizeMermaidCode(parsed.mermaidCode),
       keyVariables: Array.isArray(parsed.keyVariables)
         ? parsed.keyVariables.map((v: any) => ({
             symbol: cleanLatex(v.symbol || "Node"),
@@ -158,25 +168,31 @@ export function parseMathAnalysisResponse(
           }))
         : [],
       canvasDrawings: Array.isArray(parsed.canvasDrawings)
-        ? parsed.canvasDrawings.map((elem: any) => ({
-            type: elem.type || "rectangle",
-            x: Number(elem.x) || coordinates.x + 350,
-            y: Number(elem.y) || coordinates.y,
-            width: Number(elem.width) || 280,
-            height: Number(elem.height) || 140,
-            strokeColor: elem.strokeColor || "#6366f1",
-            backgroundColor: elem.backgroundColor || "transparent",
-            fillStyle: elem.fillStyle || "hachure",
-            text: elem.text || elem.label || undefined,
-            label: elem.label || undefined,
-          }))
+        ? parsed.canvasDrawings.map((elem: any) =>
+            normalizeCanvasDrawing(elem, coordinates)
+          )
         : undefined,
       createdAt: Date.now()
     };
   } catch (err) {
     console.warn("Failed to parse JSON directly from LLM output. Returning structured fallback:", err);
-    return createFallbackResult(rawText, coordinates, resultId);
+    const fallback = createFallbackResult(rawText, coordinates, resultId);
+    return {
+      ...fallback,
+      diagramId: diagram?.id,
+      diagramTitle: diagram?.title || "Canvas diagram",
+    };
   }
+}
+
+function sanitizeMermaidCode(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value
+    .trim()
+    .replace(/^```mermaid\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/, "");
+  return trimmed ? trimmed.slice(0, 12_000) : undefined;
 }
 
 function validateClassification(cat: any): MathAnalysisResult["classification"] {
@@ -223,8 +239,8 @@ export function normalizeCanvasDrawing(
     height: Number(elem?.height) || 140,
     strokeColor: elem?.strokeColor || "#6366f1",
     backgroundColor: elem?.backgroundColor || "transparent",
-    fillStyle: elem?.fillStyle || "hachure",
-    text: elem?.text || undefined,
+    fillStyle: elem?.fillStyle || "solid",
+    text: elem?.text || elem?.label || undefined,
     label: elem?.label || undefined,
     points,
     strokeWidth: elem?.strokeWidth != null ? Number(elem.strokeWidth) : undefined,

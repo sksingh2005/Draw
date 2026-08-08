@@ -20,6 +20,10 @@ export interface ChatMessage {
   text: string;
   imageCrop?: string;
   analysisResult?: MathAnalysisResult;
+  /** Connects a chat response to the native canvas elements it created. */
+  diagramId?: string;
+  diagramTitle?: string;
+  mermaidCode?: string;
   timestamp: number;
 }
 
@@ -31,9 +35,20 @@ export interface WorkspacePage {
   updatedAt: number;
   strokes: CanvasStroke[];
   noteNodes: CanvasNoteNode[];
-  excalidrawElements?: any[];
-  appState?: Record<string, any>;
+  /** Current native canvas scene. `strokes` remains only for legacy freehand data. */
+  excalidrawElements?: Record<string, unknown>[];
+  appState?: Record<string, unknown>;
   messages: ChatMessage[];
+}
+
+export function getPageElements(page: WorkspacePage): Record<string, unknown>[] {
+  if (Array.isArray(page.excalidrawElements)) return page.excalidrawElements;
+
+  // Older releases stored the Excalidraw scene in `strokes`; retain it on load.
+  if (Array.isArray(page.strokes) && page.strokes.some((item) => "type" in item)) {
+    return page.strokes as unknown as Record<string, unknown>[];
+  }
+  return [];
 }
 
 const STORAGE_KEY_PAGES = "mathcanvas_workspace_pages_v1";
@@ -100,7 +115,10 @@ export function getSavedPages(): WorkspacePage[] {
       localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(DEFAULT_PAGES));
       return DEFAULT_PAGES;
     }
-    return JSON.parse(raw);
+    return JSON.parse(raw).map((page: WorkspacePage) => ({
+      ...page,
+      excalidrawElements: getPageElements(page),
+    }));
   } catch {
     return DEFAULT_PAGES;
   }
@@ -135,6 +153,7 @@ export function createNewPage(
     createdAt: Date.now(),
     updatedAt: Date.now(),
     strokes: [],
+    excalidrawElements: [],
     noteNodes: [],
     messages: [
       {
@@ -232,7 +251,11 @@ export function parseAndValidateWorkspaceImport(jsonContent: string): WorkspaceP
       updatedAt: timestamp,
       strokes: Array.isArray(p.strokes) ? p.strokes : [],
       noteNodes: Array.isArray(p.noteNodes) ? p.noteNodes : [],
-      excalidrawElements: Array.isArray(p.excalidrawElements) ? p.excalidrawElements : [],
+      excalidrawElements: Array.isArray(p.excalidrawElements)
+        ? p.excalidrawElements
+        : Array.isArray(p.strokes) && p.strokes.some((item: CanvasStroke) => "type" in item)
+          ? (p.strokes as unknown as Record<string, unknown>[])
+          : [],
       appState: p.appState || {},
       messages: Array.isArray(p.messages) ? p.messages : [],
     };

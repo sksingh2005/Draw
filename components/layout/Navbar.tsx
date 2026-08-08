@@ -6,7 +6,6 @@ import {
   PanelLeft,
   Sparkles,
   BookOpen,
-  Key,
   MessageSquare,
   Maximize2,
   Minimize2,
@@ -29,8 +28,6 @@ interface NavbarProps {
   isAnalyzing?: boolean;
   onAnalyzeCanvas: () => void;
   onOpenPresetLibrary: () => void;
-  hasApiKey: boolean;
-  onOpenApiKeyModal: () => void;
   onToggleChat: () => void;
   isMaximized: boolean;
   onToggleMaximize: () => void;
@@ -46,8 +43,6 @@ export function Navbar({
   isAnalyzing = false,
   onAnalyzeCanvas,
   onOpenPresetLibrary,
-  hasApiKey,
-  onOpenApiKeyModal,
   onToggleChat,
   isMaximized,
   onToggleMaximize,
@@ -160,23 +155,6 @@ export function Navbar({
 
       {/* Right Quick Actions */}
       <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onOpenApiKeyModal}
-          className={`rounded-xl text-xs gap-1.5 border-indigo-500/30 ${
-            hasApiKey
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "bg-amber-500/10 text-amber-600 dark:text-amber-400 animate-pulse"
-          }`}
-          title="Configure Gemini API Key"
-        >
-          <Key className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">
-            {hasApiKey ? "API Connected" : "Set API Key"}
-          </span>
-        </Button>
-
         <Button
           variant="ghost"
           size="icon"

@@ -8,6 +8,8 @@ export type ElementSource = "user" | "ai";
 export const AI_CUSTOM_DATA_KEY = "drawSource";
 export const AI_SESSION_KEY = "aiSessionId";
 export const AI_ROLE_KEY = "aiRole";
+/** Stable id shared by every element produced for one AI diagram/update. */
+export const AI_DIAGRAM_KEY = "aiDiagramId";
 
 export interface SceneElementLike {
   id?: string;
@@ -55,13 +57,14 @@ export function isAiElement(el: SceneElementLike): boolean {
 /** Stamp AI ownership metadata onto an Excalidraw element. */
 export function stampAiProvenance<T extends SceneElementLike>(
   el: T,
-  meta: { sessionId?: string; role?: string; index?: number } = {}
+  meta: { sessionId?: string; role?: string; index?: number; diagramId?: string } = {}
 ): T {
   const customData = {
     ...(el.customData || {}),
     [AI_CUSTOM_DATA_KEY]: "ai",
     [AI_SESSION_KEY]: meta.sessionId || `session-${Date.now()}`,
     [AI_ROLE_KEY]: meta.role || "explanation",
+    ...(meta.diagramId ? { [AI_DIAGRAM_KEY]: meta.diagramId } : {}),
     aiIndex: meta.index ?? 0,
     createdAt: Date.now(),
   };

@@ -11,13 +11,14 @@ export interface AnalyzeStreamParams {
   imageBase64?: string;
   coordinates?: CanvasCoordinates;
   promptText?: string;
-  userApiKey?: string;
   existingElementsSummary?: string;
   freeSpaceHints?: string;
   selectionSummary?: string;
   suggestedPlacement?: CanvasCoordinates;
   conversationSnippet?: string;
   mode?: AnalysisMode;
+  diagramId?: string;
+  diagramTitle?: string;
   signal?: AbortSignal;
   onEvent: (event: ClientStreamEvent) => void | Promise<void>;
 }
@@ -34,19 +35,19 @@ export async function streamAnalyze(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      "x-gemini-api-key": params.userApiKey || "",
     },
     body: JSON.stringify({
       imageBase64: params.imageBase64,
       coordinates: params.coordinates || { x: 100, y: 100, width: 400, height: 300 },
       promptText: params.promptText,
-      userApiKey: params.userApiKey,
       existingElementsSummary: params.existingElementsSummary,
       freeSpaceHints: params.freeSpaceHints,
       selectionSummary: params.selectionSummary,
       suggestedPlacement: params.suggestedPlacement,
       conversationSnippet: params.conversationSnippet,
       mode: params.mode,
+      diagramId: params.diagramId,
+      diagramTitle: params.diagramTitle,
       stream: true,
     }),
     signal: params.signal,

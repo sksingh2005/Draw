@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { KatexRenderer } from "../math/KatexRenderer";
 import { FunctionGrapher } from "../math/FunctionGrapher";
 import { ChatMessage } from "@/lib/workspace-store";
+import { MathAnalysisResult } from "@/lib/math-parser";
 import {
   MessageSquare,
   Send,
@@ -16,25 +17,239 @@ import {
   Bot,
   User,
   ChevronRight,
-  ChevronLeft,
   X,
   Paperclip,
   CheckCircle2,
+  Network,
+  Database,
+  GitBranch,
+  Calculator,
+  Lightbulb,
+  MapPin,
+  Layers,
+  Focus,
+  Braces,
 } from "lucide-react";
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   onSendMessage: (text: string, imageCrop?: string) => void;
-  onAttachCanvasCrop: () => { imageBase64: string } | null;
+  onAttachCanvasCrop: () => Promise<string | null>;
+  onFocusDiagram: (diagramId: string) => void;
   isOpen: boolean;
   onToggleOpen: () => void;
   isAnalyzing: boolean;
+}
+
+const SUGGESTIONS = [
+  "Design a chat app microservices architecture",
+  "Draw an ER schema for users & orders",
+  "Explain quadratic formula with a graph",
+  "Flowchart for user signup + OAuth",
+];
+
+function looksLikeLatex(text: string): boolean {
+  if (!text) return false;
+  // Short pure latex-ish, or wrapped in $
+  if (/^\$\$[\s\S]+\$\$$/.test(text.trim())) return true;
+  if (/^\$[^$]+\$/.test(text.trim()) && text.length < 120) return true;
+  if (/\\frac|\\sqrt|\\sum|\\int|\\begin\{/.test(text) && text.length < 200) return true;
+  // Long prose should stay plain
+  if (text.length > 80 && /[.!?]/.test(text)) return false;
+  return false;
+}
+
+function classificationMeta(c?: MathAnalysisResult["classification"]) {
+  switch (c) {
+    case "architecture":
+      return {
+        label: "Architecture",
+        icon: Network,
+        className: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
+      };
+    case "schema":
+      return {
+        label: "DB Schema",
+        icon: Database,
+        className: "bg-amber-500/10 text-amber-700 border-amber-500/20",
+      };
+    case "flowchart":
+      return {
+        label: "Flowchart",
+        icon: GitBranch,
+        className: "bg-violet-500/10 text-violet-700 border-violet-500/20",
+      };
+    case "equation":
+    case "calculus":
+    case "geometry":
+    case "physics":
+    case "graph":
+      return {
+        label: c === "graph" ? "Graph" : "Math",
+        icon: Calculator,
+        className: "bg-indigo-500/10 text-indigo-700 border-indigo-500/20",
+      };
+    default:
+      return {
+        label: "Concept",
+        icon: Lightbulb,
+        className: "bg-sky-500/10 text-sky-700 border-sky-500/20",
+      };
+  }
+}
+
+function MessageBody({ text, isUser }: { text: string; isUser: boolean }) {
+  // Support simple multi-paragraph + optional latex lines
+  const paragraphs = text.split(/\n{2,}/).filter(Boolean);
+
+  return (
+    <div
+      className={`inline-block p-3 rounded-2xl text-xs leading-relaxed max-w-full ${
+        isUser
+          ? "bg-indigo-600 text-white rounded-tr-sm"
+          : "bg-card border shadow-xs text-foreground rounded-tl-sm"
+      }`}
+    >
+      <div className="space-y-2 whitespace-pre-wrap break-words">
+        {paragraphs.map((p, i) => {
+          if (!isUser && looksLikeLatex(p)) {
+            return <KatexRenderer key={i} math={p} block={p.length > 40} className="text-xs" />;
+          }
+          return (
+            <p key={i} className="text-xs leading-relaxed">
+              {p}
+            </p>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AnalysisCard({ result }: { result: MathAnalysisResult }) {
+  const meta = classificationMeta(result.classification);
+  const Icon = meta.icon;
+  const drawCount = result.canvasDrawings?.length || 0;
+
+  return (
+    <div className="space-y-2 text-xs">
+      <Card className="border shadow-xs bg-muted/30 overflow-hidden">
+        <CardContent className="p-0">
+          <div className="px-3 py-2 border-b bg-background/60 flex flex-wrap items-center gap-1.5">
+            <Badge variant="outline" className={`text-[10px] gap-1 ${meta.className}`}>
+              <Icon className="w-3 h-3" />
+              {meta.label}
+            </Badge>
+            {drawCount > 0 && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1 bg-indigo-500/5 text-indigo-600 border-indigo-500/15"
+              >
+                <Layers className="w-3 h-3" />
+                {drawCount} canvas mark{drawCount === 1 ? "" : "s"}
+              </Badge>
+            )}
+            {result.updateMode && (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                append-only
+              </Badge>
+            )}
+          </div>
+
+          <div className="p-3 space-y-2.5">
+            {result.focusNote && (
+              <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground bg-background/80 rounded-lg border px-2 py-1.5">
+                <MapPin className="w-3 h-3 mt-0.5 text-indigo-500 shrink-0" />
+                <span>{result.focusNote}</span>
+              </div>
+            )}
+
+            <div className="flex items-start gap-1.5 text-[11px] font-semibold text-foreground">
+              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 mt-0.5 shrink-0" />
+              <span className="leading-snug">{result.summary}</span>
+            </div>
+
+            {result.keyVariables?.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {result.keyVariables.slice(0, 6).map((v, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-background border text-[10px]"
+                  >
+                    <span className="font-semibold text-indigo-600">{v.symbol}</span>
+                    {v.value && <span className="text-muted-foreground">= {v.value}</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {result.steps?.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Steps
+                </div>
+                {result.steps.map((st) => (
+                  <div
+                    key={st.stepNumber}
+                    className="bg-background p-2 rounded-lg border space-y-1 relative pl-7"
+                  >
+                    <span className="absolute left-2 top-2 w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold flex items-center justify-center">
+                      {st.stepNumber}
+                    </span>
+                    <div className="font-semibold text-[11px]">{st.title}</div>
+                    {st.explanation && (
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        {st.explanation}
+                      </p>
+                    )}
+                    {st.latex && looksLikeLatex(st.latex) && (
+                      <KatexRenderer math={st.latex} block className="text-xs" />
+                    )}
+                    {st.latex && !looksLikeLatex(st.latex) && (
+                      <p className="text-[11px] font-mono bg-muted/50 rounded px-1.5 py-1">
+                        {st.latex}
+                      </p>
+                    )}
+                    {st.result && (
+                      <p className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">
+                        → {st.result}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {result.conceptExplanation && (
+              <div className="rounded-lg border bg-amber-500/5 border-amber-500/15 p-2 space-y-1">
+                <div className="text-[11px] font-bold flex items-center gap-1 text-amber-800 dark:text-amber-300">
+                  <Lightbulb className="w-3 h-3" />
+                  {result.conceptExplanation.title}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {result.conceptExplanation.coreIdea}
+                </p>
+                {result.conceptExplanation.keyTakeaway && (
+                  <p className="text-[10px] font-medium text-foreground">
+                    Takeaway: {result.conceptExplanation.keyTakeaway}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {result.graphConfig && <FunctionGrapher config={result.graphConfig} />}
+    </div>
+  );
 }
 
 export function ChatPanel({
   messages,
   onSendMessage,
   onAttachCanvasCrop,
+  onFocusDiagram,
   isOpen,
   onToggleOpen,
   isAnalyzing,
@@ -43,28 +258,21 @@ export function ChatPanel({
   const [attachedCrop, setAttachedCrop] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isAnalyzing]);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() && !attachedCrop) return;
-
     onSendMessage(inputText.trim(), attachedCrop || undefined);
     setInputText("");
     setAttachedCrop(null);
   };
 
-  const handleAttachCrop = () => {
-    const res = onAttachCanvasCrop();
-    if (res?.imageBase64) {
-      setAttachedCrop(res.imageBase64);
-    }
+  const handleAttachCrop = async () => {
+    const crop = await onAttachCanvasCrop();
+    if (crop) setAttachedCrop(crop);
   };
 
   if (!isOpen) {
@@ -85,15 +293,19 @@ export function ChatPanel({
     );
   }
 
+  const showSuggestions = messages.length <= 1 && !isAnalyzing;
+
   return (
-    <aside className="w-80 md:w-96 border-l bg-background/95 backdrop-blur-xl flex flex-col h-full z-20 transition-all duration-300 animate-in slide-in-from-right">
-      {/* Top Header */}
+    <aside className="w-80 md:w-[26rem] border-l bg-background/95 backdrop-blur-xl flex flex-col h-full z-20 transition-all duration-300 animate-in slide-in-from-right">
       <div className="p-3 border-b flex items-center justify-between bg-muted/40">
         <div className="flex items-center gap-2 font-bold text-xs">
           <Bot className="w-4 h-4 text-indigo-500" />
           <span>AI Workspace Chat</span>
-          <Badge variant="outline" className="text-[10px] bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
-            Gemini Multimodal
+          <Badge
+            variant="outline"
+            className="text-[10px] bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
+          >
+            Canvas-first
           </Badge>
         </div>
         <Button
@@ -106,7 +318,6 @@ export function ChatPanel({
         </Button>
       </div>
 
-      {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
         {messages.map((msg) => {
           const isUser = msg.sender === "user";
@@ -125,10 +336,10 @@ export function ChatPanel({
                 {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
               </div>
 
-              <div className={`space-y-2 max-w-[85%] ${isUser ? "text-right" : "text-left"}`}>
-                {/* Attached Canvas Crop Thumbnail */}
+              <div className={`space-y-2 max-w-[88%] ${isUser ? "text-right" : "text-left"}`}>
                 {msg.imageCrop && (
                   <div className="inline-block border rounded-xl overflow-hidden shadow-sm max-w-full bg-white">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={msg.imageCrop}
                       alt="Canvas Selection"
@@ -137,59 +348,79 @@ export function ChatPanel({
                   </div>
                 )}
 
-                {/* Message Text Bubble */}
-                {msg.text && (
-                  <div
-                    className={`inline-block p-3 rounded-2xl text-xs leading-relaxed ${
-                      isUser
-                        ? "bg-indigo-600 text-white rounded-tr-xs"
-                        : "bg-card border shadow-xs text-foreground rounded-tl-xs"
-                    }`}
-                  >
-                    <KatexRenderer math={msg.text} block={false} />
-                  </div>
+                {/* Avoid double-rendering summary when analysis card already shows it */}
+                {msg.text && !(msg.analysisResult && msg.text.includes(msg.analysisResult.summary)) && (
+                  <MessageBody text={msg.text} isUser={isUser} />
+                )}
+                {msg.text && msg.analysisResult && msg.text.includes(msg.analysisResult.summary) && (
+                  // Show only focus prefix if we duplicated summary into text
+                  msg.text.replace(msg.analysisResult.summary, "").trim() ? (
+                    <MessageBody
+                      text={msg.text.replace(msg.analysisResult.summary, "").trim()}
+                      isUser={isUser}
+                    />
+                  ) : null
                 )}
 
-                {/* AI Structured Analysis Steps */}
-                {msg.analysisResult && (
-                  <div className="space-y-2 text-xs">
-                    <Card className="border shadow-xs bg-muted/40">
-                      <CardContent className="p-3 space-y-2">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> {msg.analysisResult.summary}
-                        </div>
+                {msg.analysisResult && <AnalysisCard result={msg.analysisResult} />}
 
-                        {msg.analysisResult.steps.map((st) => (
-                          <div key={st.stepNumber} className="bg-background p-2 rounded-lg border space-y-1">
-                            <div className="font-semibold text-[11px] flex justify-between">
-                              <span>Step {st.stepNumber}: {st.title}</span>
-                            </div>
-                            <p className="text-[11px] text-muted-foreground">{st.explanation}</p>
-                            {st.latex && <KatexRenderer math={st.latex} block={true} className="text-xs" />}
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
+                {!isUser && msg.diagramId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onFocusDiagram(msg.diagramId!)}
+                    className="h-7 rounded-lg text-[10px] gap-1.5"
+                    title="Select this diagram on the canvas, then ask a follow-up"
+                  >
+                    <Focus className="w-3 h-3 text-indigo-500" />
+                    Focus {msg.diagramTitle || "diagram"}
+                  </Button>
+                )}
 
-                    {msg.analysisResult.graphConfig && (
-                      <FunctionGrapher config={msg.analysisResult.graphConfig} />
-                    )}
-                  </div>
+                {!isUser && msg.mermaidCode && (
+                  <details className="rounded-lg border bg-muted/30 text-left overflow-hidden">
+                    <summary className="cursor-pointer px-2 py-1.5 text-[10px] font-medium text-muted-foreground flex items-center gap-1.5">
+                      <Braces className="w-3 h-3 text-indigo-500" /> Mermaid source
+                    </summary>
+                    <pre className="border-t px-2 py-2 overflow-x-auto text-[10px] leading-relaxed text-foreground bg-background whitespace-pre-wrap">
+                      {msg.mermaidCode}
+                    </pre>
+                  </details>
                 )}
               </div>
             </div>
           );
         })}
 
-        {isAnalyzing && (
-          <div className="flex flex-col gap-1.5 text-xs text-muted-foreground p-2">
-            <div className="flex items-center gap-2 animate-pulse">
-              <Sparkles className="w-4 h-4 text-indigo-500 animate-spin" />
-              <span>AI analyzing query & canvas…</span>
+        {showSuggestions && (
+          <div className="space-y-2 pt-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-1">
+              Try asking
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onSendMessage(s)}
+                  className="text-left text-[11px] px-3 py-2 rounded-xl border bg-card hover:bg-indigo-500/5 hover:border-indigo-500/30 transition-colors text-muted-foreground hover:text-foreground"
+                >
+                  {s}
+                </button>
+              ))}
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-indigo-600 dark:text-indigo-400 pl-6">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping" />
-              Streaming shapes & pencil strokes onto the whiteboard in real time
+          </div>
+        )}
+
+        {isAnalyzing && (
+          <div className="flex flex-col gap-1.5 text-xs text-muted-foreground p-2 rounded-xl border bg-indigo-500/5 border-indigo-500/15">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-500 animate-spin" />
+              <span className="font-medium text-foreground">Teaching on the canvas…</span>
+            </div>
+            <div className="text-[11px] text-indigo-600 dark:text-indigo-400 pl-6">
+              Drawing clean vector nodes & callouts in free space (append-only)
             </div>
           </div>
         )}
@@ -197,9 +428,7 @@ export function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Form */}
       <form onSubmit={handleSend} className="p-3 border-t bg-muted/20 space-y-2">
-        {/* Attached Crop Preview Bar */}
         {attachedCrop && (
           <div className="flex items-center justify-between bg-card p-1.5 rounded-xl border text-xs">
             <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-medium">
@@ -229,16 +458,17 @@ export function ChatPanel({
 
           <Input
             type="text"
-            placeholder="Ask anything or attach canvas..."
+            placeholder="Ask to draw architecture, schema, math…"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             className="flex-1 text-xs h-9 rounded-xl bg-background"
+            disabled={isAnalyzing}
           />
 
           <Button
             type="submit"
             size="icon"
-            disabled={!inputText.trim() && !attachedCrop}
+            disabled={(!inputText.trim() && !attachedCrop) || isAnalyzing}
             className="w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
           >
             <Send className="w-4 h-4" />

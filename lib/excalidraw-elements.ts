@@ -17,6 +17,8 @@ export interface ExcalidrawAPILike {
 export interface AiBuildOptions {
   sessionId?: string;
   role?: string;
+  /** Groups all generated scene elements so a prior diagram can be reselected. */
+  diagramId?: string;
 }
 
 function randId(prefix: string): string {
@@ -49,6 +51,7 @@ function baseProps(
     sessionId: provenance?.sessionId,
     role: provenance?.role || "explanation",
     index: provenance?.index,
+    diagramId: provenance?.diagramId,
   }) as ExcalidrawElement;
 }
 
@@ -61,8 +64,11 @@ export function aiElementToExcalidraw(
   const baseId = randId(`ai-${item.type}-${index}`);
   const strokeColor = item.strokeColor || "#6366f1";
   const backgroundColor = item.backgroundColor || "transparent";
-  const fillStyle = item.fillStyle || "hachure";
+  // Solid fills read as product UI; hachure looks noisy for architecture
+  const fillStyle = item.fillStyle || "solid";
   const provenance = { ...opts, index };
+  // Cleaner look for system diagrams; slightly sketchy for freehand math
+  const roughness = item.type === "freedraw" ? 1 : 0.4;
   const elements: ExcalidrawElement[] = [];
 
   if (item.type === "freedraw" && item.points && item.points.length > 0) {
@@ -173,26 +179,35 @@ export function aiElementToExcalidraw(
     return elements;
   }
 
-  // rectangle | diamond | ellipse
+  // rectangle | diamond | ellipse — paired with properly bound text
   const shapeType =
     item.type === "diamond" || item.type === "ellipse" ? item.type : "rectangle";
   const rawItemText = item.text || item.label;
-  
-  // Word wrap text if long
-  const formattedText = rawItemText ? wrapText(rawItemText, 38) : undefined;
+
+  const formattedText = rawItemText ? wrapText(rawItemText, 34) : undefined;
   const textId = formattedText ? randId(`ai-text-${index}`) : null;
 
-  // Calculate dynamic dimensions to guarantee NO text clipping
-  const fontSize = item.fontSize || 15;
-  const paddingX = 20;
-  const paddingY = 16;
-  const textDimensions = formattedText ? calcTextBounds(formattedText, fontSize) : { width: 0, height: 0 };
-  
-  const minRequiredWidth = formattedText ? textDimensions.width + paddingX * 2 : 120;
-  const minRequiredHeight = formattedText ? textDimensions.height + paddingY * 2 : 80;
+  const fontSize = item.fontSize || (formattedText && formattedText.length > 80 ? 14 : 15);
+  const paddingX = 18;
+  const paddingY = 14;
+  const textDimensions = formattedText
+    ? calcTextBounds(formattedText, fontSize)
+    : { width: 0, height: 0 };
 
-  const boxWidth = Math.max(item.width || 260, minRequiredWidth);
-  const boxHeight = Math.max(item.height || 120, minRequiredHeight);
+  const minRequiredWidth = formattedText ? textDimensions.width + paddingX * 2 : 140;
+  const minRequiredHeight = formattedText ? textDimensions.height + paddingY * 2 : 90;
+
+  const boxWidth = Math.max(item.width || 240, minRequiredWidth, 160);
+  const boxHeight = Math.max(item.height || 100, minRequiredHeight, 72);
+
+  const bg =
+    backgroundColor === "transparent" || !backgroundColor
+      ? shapeType === "ellipse"
+        ? "#fef3c7"
+        : shapeType === "diamond"
+          ? "#ede9fe"
+          : "#e0e7ff"
+      : backgroundColor;
 
   elements.push(
     baseProps(
@@ -204,12 +219,10 @@ export function aiElementToExcalidraw(
         width: boxWidth,
         height: boxHeight,
         strokeColor,
-        backgroundColor:
-          backgroundColor === "transparent" && shapeType === "rectangle"
-            ? "#e0e7ff"
-            : backgroundColor,
+        backgroundColor: bg,
         fillStyle,
         strokeWidth: item.strokeWidth || 2,
+        roughness,
         roundness: shapeType === "ellipse" ? null : { type: 3 },
         boundElements: textId ? [{ type: "text", id: textId }] : null,
       },
@@ -218,6 +231,7 @@ export function aiElementToExcalidraw(
   );
 
   if (formattedText && textId) {
+    // Bound text: containerId links label into the shape so Excalidraw keeps them together
     elements.push(
       baseProps(
         {
@@ -225,21 +239,22 @@ export function aiElementToExcalidraw(
           type: "text",
           x: item.x + paddingX,
           y: item.y + paddingY,
-          width: boxWidth - paddingX * 2,
-          height: boxHeight - paddingY * 2,
-          strokeColor: "#1e1b4b",
+          width: Math.max(40, boxWidth - paddingX * 2),
+          height: Math.max(24, boxHeight - paddingY * 2),
+          strokeColor: "#0f172a",
           backgroundColor: "transparent",
-          fillStyle: "hachure",
+          fillStyle: "solid",
           strokeWidth: 1,
+          roughness: 0,
           roundness: null,
           text: formattedText,
           fontSize,
-          fontFamily: 1,
-          textAlign: "left",
-          verticalAlign: "top",
-          containerId: null,
+          fontFamily: 3, // code / clean sans-like in Excalidraw
+          textAlign: "center",
+          verticalAlign: "middle",
+          containerId: baseId,
           originalText: formattedText,
-          autoResize: true,
+          autoResize: false,
           lineHeight: 1.25,
         },
         provenance

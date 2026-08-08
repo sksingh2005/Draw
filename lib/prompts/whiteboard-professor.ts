@@ -93,12 +93,12 @@ Put fields in this order so the client can stream drawings early:
   2. summary          (1–2 sentences for chat)
   3. updateMode       ("append" always unless user asked to redo a specific part)
   4. focusNote        (what part of the canvas you are addressing)
-  5. canvasDrawings   (early — teaching order)
-  6. latexFormula, detectedText, keyVariables, givenData
-  7. steps
-  8. graphConfig (optional)
-  9. conceptExplanation (optional)
-  10. practiceProblems (optional)
+  5. diagramTitle     (short name, 3–8 words)
+  6. mermaidCode      (optional; architecture/schema/flowchart only)
+  7. canvasDrawings   (early — teaching order)
+  8. latexFormula, detectedText, keyVariables, givenData
+  9. steps
+  10. graphConfig, conceptExplanation, practiceProblems (optional)
 
 ══════════════════════════════════════════════════════════════════
 JSON SCHEMA
@@ -108,6 +108,8 @@ JSON SCHEMA
   "summary": "Short chat-facing answer",
   "updateMode": "append",
   "focusNote": "Which existing USER/AI content this answer attaches to",
+  "diagramTitle": "Short descriptive diagram name",
+  "mermaidCode": "flowchart LR\n  A[Client] --> B[API]",
   "canvasDrawings": [
     {
       "type": "arrow" | "rectangle" | "ellipse" | "diamond" | "text" | "freedraw" | "line",
@@ -158,6 +160,14 @@ JSON SCHEMA
     }
   ]
 }
+
+MERMAID SOURCE (PORTABLE DIAGRAM SPEC)
+For architecture, schema, and flowchart requests, also include a compact valid
+Mermaid definition in mermaidCode. It is a portable source/reference, not a
+replacement for canvasDrawings: the user must still receive selectable native
+canvas elements. Use only flowchart, sequenceDiagram, or erDiagram syntax; no
+Markdown fences, click directives, or HTML labels. For math or a small
+annotation, omit mermaidCode rather than forcing it.
 
 ══════════════════════════════════════════════════════════════════
 SYSTEM ARCHITECTURE & MICROSERVICE LAYOUT RULES (CLEAN VECTOR NODES)
