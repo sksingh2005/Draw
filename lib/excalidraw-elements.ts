@@ -375,6 +375,112 @@ export async function animateFreedraw(
   return last;
 }
 
+function pencilOutlineFor(element: ExcalidrawElement): ExcalidrawElement | null {
+  const type = String(element.type || "");
+  const width = Math.max(1, Number(element.width) || 1);
+  const height = Math.max(1, Number(element.height) || 1);
+  let points: [number, number][];
+
+  if (type === "rectangle") {
+    points = [[0, 0], [width, 0], [width, height], [0, height], [0, 0]];
+  } else if (type === "diamond") {
+    points = [[width / 2, 0], [width, height / 2], [width / 2, height], [0, height / 2], [width / 2, 0]];
+  } else if (type === "ellipse") {
+    const steps = 18;
+    points = Array.from({ length: steps + 1 }, (_, index) => {
+      const angle = (Math.PI * 2 * index) / steps - Math.PI / 2;
+      return [width / 2 + (width / 2) * Math.cos(angle), height / 2 + (height / 2) * Math.sin(angle)];
+    });
+  } else if (type === "line" || type === "arrow") {
+    const sourcePoints = element.points as [number, number][] | undefined;
+    points = sourcePoints?.length ? sourcePoints : [[0, 0], [width, height]];
+  } else {
+    return null;
+  }
+
+  return {
+    ...element,
+    id: `${String(element.id)}-pencil-outline`,
+    type: "freedraw",
+    x: Number(element.x) || 0,
+    y: Number(element.y) || 0,
+    width,
+    height,
+    backgroundColor: "transparent",
+    fillStyle: "solid",
+    points,
+    pressures: points.map(() => 0.5),
+    simulatePressure: true,
+    lastCommittedPoint: null,
+    containerId: null,
+    boundElements: null,
+    version: 1,
+  };
+}
+
+/**
+ * Gives structured elements a short pencil-outline reveal before settling on
+ * their final selectable Excalidraw shape. Text is revealed character-by-character.
+ */
+export async function animatePencilElement(
+  api: ExcalidrawAPILike,
+  element: ExcalidrawElement,
+  opts: { pointDelayMs?: number; characterDelayMs?: number; onFrame?: (els: ExcalidrawElement[]) => void } = {}
+): Promise<ExcalidrawElement[]> {
+  if (element.type === "freedraw") {
+    return animateFreedraw(api, element, {
+      pointDelayMs: opts.pointDelayMs ?? 18,
+      onFrame: opts.onFrame,
+    });
+  }
+
+  if (element.type === "text") {
+    const completeText = String(element.text || "");
+    if (!completeText) return appendToScene(api, [element]);
+
+    const id = String(element.id);
+    let scene = appendToScene(api, [{ ...element, text: "", originalText: completeText, version: 1 }]);
+    opts.onFrame?.(scene);
+
+    const chunkSize = Math.max(1, Math.ceil(completeText.length / 20));
+    for (let end = chunkSize; end < completeText.length; end += chunkSize) {
+      const current = api.getSceneElements().filter((item) => !item.isDeleted && item.id !== id);
+      scene = [
+        ...current,
+        {
+          ...element,
+          text: completeText.slice(0, end),
+          originalText: completeText,
+          version: end + 1,
+          versionNonce: Math.floor(Math.random() * 100000),
+          updated: Date.now(),
+        },
+      ];
+      api.updateScene({ elements: scene });
+      opts.onFrame?.(scene);
+      await sleep(opts.characterDelayMs ?? 14);
+    }
+
+    const current = api.getSceneElements().filter((item) => !item.isDeleted && item.id !== id);
+    scene = [...current, element];
+    api.updateScene({ elements: scene });
+    opts.onFrame?.(scene);
+    return scene;
+  }
+
+  const outline = pencilOutlineFor(element);
+  if (!outline) return appendToScene(api, [element]);
+
+  let scene = await animateFreedraw(api, outline, {
+    pointDelayMs: opts.pointDelayMs ?? 14,
+    onFrame: opts.onFrame,
+  });
+  scene = [...api.getSceneElements().filter((item) => !item.isDeleted && item.id !== outline.id), element];
+  api.updateScene({ elements: scene });
+  opts.onFrame?.(scene);
+  return scene;
+}
+
 export interface ProgressiveDrawOptions {
   shapeDelayMs?: number;
   pointDelayMs?: number;

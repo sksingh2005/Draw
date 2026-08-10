@@ -101,10 +101,31 @@ Put fields in this order so the client can stream drawings early:
   10. graphConfig, conceptExplanation, practiceProblems (optional)
 
 ══════════════════════════════════════════════════════════════════
+LIVE CANVAS CHOREOGRAPHY (CRITICAL)
+canvasDrawings is a time-ordered visual sequence, not an unordered list. The
+viewer sees each item arrive on the whiteboard, so make the build feel intentional:
+1. Start with the primary object, starting state, or first equation—not a prose
+   title card. Establish diagram nodes before any connector.
+2. Add the next meaningful node or transformation in reading order: left-to-right
+   for flows/architecture and top-to-bottom for worked solutions.
+3. Emit an arrow only AFTER both objects it connects have appeared. Label it only
+   when useful (protocol, event, Yes/No, or cardinality).
+4. Finish with one compact result, decision, or trade-off callout only when it
+   clarifies the visual. Do not repeat the diagram in loose text.
+5. Put a node's label in its "text" field. Do NOT emit duplicate standalone text
+   for a node label; the client creates the bound label.
+6. Use standalone "text" only for a small title, equation, arrow label, or
+   callout. Keep it to 1–3 short lines; never animate an essay onto the board.
+7. Prefer 4–9 useful visual beats. Every drawing must add a distinct idea; avoid
+   decorative shapes, duplicate labels, and "Step 1 / Step 2" narration.
+
+Label density matters more than prose. A node should usually contain a short name
+plus at most two terse facts. Put deeper explanation in summary/steps, not shapes.
+
 JSON SCHEMA
 ══════════════════════════════════════════════════════════════════
 {
-  "classification": "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph",
+  "classification": "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph" | "architecture" | "schema" | "flowchart",
   "summary": "Short chat-facing answer",
   "updateMode": "append",
   "focusNote": "Which existing USER/AI content this answer attaches to",
@@ -177,27 +198,72 @@ When asked for a System Architecture, Microservices, Cloud System, or Database D
 2. NEVER PUT ESSAYS OR BULLETED PARAGRAPHS INSIDE BOXES! Keep text inside each node concise (2-4 lines max):
    - Title line: Component Name (e.g. "WebSocket Gateway Pods")
    - Specs lines: Short tech bullet points (e.g. "• Node.js + ws\n• StatefulSet (HPA)\n• 10k conn/pod")
-3. MANDATORY MULTI-NODE GRID (6–12 connected nodes):
-   Layout components in horizontal tiers with explicit coordinates:
-   • Tier 1 (Clients & Gateway):
-       - [Web/Mobile Clients] (rectangle, x: 100, y: 100, w: 260, h: 100)
-       - [Nginx Ingress / ALB] (rectangle, x: 420, y: 100, w: 260, h: 100)
-   • Tier 2 (Microservices):
-       - [WebSocket Gateway Pods] (rectangle, x: 100, y: 280, w: 280, h: 120)
-       - [Chat REST / gRPC API] (rectangle, x: 420, y: 280, w: 280, h: 120)
-       - [Auth Microservice] (rectangle, x: 740, y: 280, w: 240, h: 120)
-   • Tier 3 (Event Bus & Caching):
-       - [Kafka Event Broker] (ellipse/rectangle, x: 100, y: 480, w: 260, h: 110)
-       - [Redis Pub/Sub Cache] (ellipse, x: 420, y: 480, w: 260, h: 110)
-   • Tier 4 (Databases & Storage):
-       - [PostgreSQL Primary & Replicas] (ellipse, x: 100, y: 660, w: 280, h: 110)
-       - [S3 Object Storage] (ellipse, x: 420, y: 660, w: 240, h: 110)
-4. CONNECTING VECTOR ARROWS ("arrow"):
-   Connect adjacent tiers with vector arrows pointing in the direction of data flow:
-   - Arrow from Clients -> Nginx Ingress
-   - Arrow from Nginx Ingress -> WebSocket Gateway
-   - Arrow from WebSocket Gateway -> Redis Pub/Sub & Kafka
-   - Arrow from Chat REST API -> PostgreSQL
+3. ADAPTIVE LAYOUT (never reuse a canned architecture): First infer the requested
+   product and only draw components warranted by that request. Use 4–8 nodes for a
+   focused design and 7–12 for a full system; organize them in readable tiers
+   (entry → services → async/state → storage) with 48px+ gaps.
+4. CONNECTING VECTOR ARROWS ("arrow"): Every important arrow has a direction and,
+   when useful, a very short protocol/event label. Do not draw arrows that imply an
+   unmentioned dependency; do not invent a cloud provider, database, or technology.
+
+══════════════════════════════════════════════════════════════════
+VIDEO STREAMING ARCHITECTURE STANDARD (Netflix-like requests)
+For a request such as "Netflix architecture", create a conceptual streaming
+platform diagram—not a claim about Netflix's proprietary internals. Show the
+end-to-end request path with 6–9 distinct nodes:
+  • Client devices → API Gateway / edge entry
+  • Identity & profile service, discovery/recommendation service, and playback
+    session/DRM service as separate control-plane nodes
+  • Metadata/catalog + cache and an event/telemetry pipeline where relevant
+  • CDN / edge delivery as a distinct media plane, with origin/transcoding only
+    when explaining content ingestion or media preparation
+Use arrows in this order: sign-in/browse/control calls first, then manifest /
+playback authorization, then media segments from CDN to the client. Do not put
+"profiles + recommendations + playback" in a single node. If the user asks only
+for a high-level architecture, keep labels short but retain the control-plane
+versus media-delivery distinction.
+
+DOMAIN PLAYBOOKS — SELECT THE RIGHT VISUAL, THEN VERIFY THE ANSWER
+══════════════════════════════════════════════════════════════════
+MATHEMATICS (equation / calculus / geometry / graph)
+• Read the exact question before drawing. Put a compact "Given" / equation callout,
+  then only the transformations required to reach the result. Use one clear result
+  box and verify substitution, sign, units, or domain restrictions before returning.
+• For geometry, draw the named shapes, labels, angles, and construction lines; do
+  not use an unrelated generic graph. For calculus, identify function, domain,
+  derivative/integral rule, and key points. Only draw a curve when it helps.
+
+PHYSICS (physics)
+• Start with a labelled situation or free-body diagram when applicable: object,
+  axes, force arrows, direction, known values and units. Then state the governing
+  law, substitute with units, solve, and perform a sanity/unit check.
+• Do not fabricate values. If a needed quantity is missing, explicitly identify it
+  and explain what additional information is needed.
+
+ER DIAGRAMS / DATA MODELS (schema)
+• Make each entity a separate rectangle. Include 3–7 important fields, clearly mark
+  PK and FK, and use arrows/labels for cardinality (1:1, 1:N, N:M). Introduce a join
+  table for many-to-many relations. Keep table fields factual and normalized; do not
+  add generic audit fields unless the request calls for them.
+
+SYSTEM DESIGN / ARCHITECTURE (architecture)
+• First reason about the request's users, entry point, services, data ownership,
+  async flow, and one or two relevant reliability/scaling concerns. Make those
+  visible on the canvas, not buried in chat prose. Follow the primary request path
+  with arrows. Use concise callouts for trade-offs rather than duplicating nodes.
+
+FLOWS, ALGORITHMS, AND STATE MACHINES (flowchart)
+• Use a rectangle for actions, diamond for a decision, and arrows labelled Yes/No
+  when branching. One diagram must have one start-to-finish reading direction. Keep
+  paths non-crossing and show terminal success/failure states.
+
+ACCURACY AND RESPONSE QUALITY
+• Classify before drawing. Match the visual to the user's actual question; a math
+  question deserves worked reasoning, not a generic architecture, and vice versa.
+• Prefer 4–9 meaningful elements over decorative complexity. Every shape and arrow
+  must answer part of the request. State assumptions briefly in summary when needed.
+• If the prompt or selected handwriting is ambiguous, say what was interpreted and
+  ask one precise follow-up instead of confidently guessing.
 
 ══════════════════════════════════════════════════════════════════
 FREEDRAW PENCIL STROKES vs STRUCTURED DIAGRAMS
@@ -290,7 +356,7 @@ export function buildWhiteboardUserPrompt(ctx: PromptBuildContext): string {
     "• Never overlap existing bounds; use suggested placement.",
     "• [USER] content is sacred; [AI] content must not be duplicated wholesale.",
     ctx.mode === "full"
-      ? "• Include a freedraw curve when graphing or showing a path."
+      ? "• Use freedraw only for a mathematical curve or trajectory; keep all other visuals structured."
       : "• Keep canvasDrawings small and tightly relevant to the question/selection."
   );
 

@@ -10,7 +10,13 @@ import { MathPresetLibrary, MathTemplate } from "@/components/math/MathPresetLib
 import { SolutionPanel } from "@/components/canvas/SolutionPanel";
 import { MathAnalysisResult, AiCanvasElement } from "@/lib/math-parser";
 import { Button } from "@/components/ui/button";
-import { Sparkles, BookOpen, Pencil } from "lucide-react";
+import { Sparkles, BookOpen, Pencil, Eraser, Lock, Unlock, MoreHorizontal } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   WorkspacePage,
   ChatMessage,
@@ -28,9 +34,10 @@ import {
 import { streamAnalyze } from "@/lib/analyze-client";
 import {
   aiElementToExcalidraw,
+  animatePencilElement,
   appendToScene,
-  animateFreedraw,
 } from "@/lib/excalidraw-elements";
+import { polishCanvasDrawings } from "@/lib/drawing-polish";
 import {
   buildLayoutMap,
   resolveNonOverlappingDrawings,
@@ -70,10 +77,12 @@ export default function Home() {
   const [isPanelOpen, setIsPanelOpen] = useState<boolean>(false);
   const [presetLibraryOpen, setPresetLibraryOpen] = useState<boolean>(false);
   const [selectedElements, setSelectedElements] = useState<readonly any[]>([]);
+  const [liveReveal, setLiveReveal] = useState<{ id: string; elements: readonly any[] } | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const drawQueueRef = useRef<Promise<void>>(Promise.resolve());
   const aiSessionRef = useRef<string>(`session-${Date.now()}`);
   const activeDiagramIdRef = useRef<string | undefined>(undefined);
+  const drawingPromptRef = useRef<string | undefined>(undefined);
   const placementCtxRef = useRef<{
     occupied: Bounds[];
     suggested: Bounds | null;
@@ -269,29 +278,32 @@ export default function Home() {
       drawQueueRef.current = drawQueueRef.current.then(async () => {
         if (!excalidrawAPI) return;
         setIsDrawingLive(true);
-        setDrawStatus(`Drawing ${item.type} #${index + 1}…`);
+        setDrawStatus(`Building visual step ${index + 1}…`);
 
-        const safe = deconflictDrawing(item);
+        const [polished = item] = polishCanvasDrawings([item], {
+          promptText: drawingPromptRef.current,
+        });
+        const safe = deconflictDrawing(polished);
         const built = aiElementToExcalidraw(safe, index, {
           sessionId: aiSessionRef.current,
           role: "explanation",
           diagramId: activeDiagramIdRef.current,
         });
-        for (const el of built) {
-          if (el.type === "freedraw") {
-            const scene = await animateFreedraw(excalidrawAPI, el, {
-              pointDelayMs: 28, // Natural human pencil handwriting pace
-              onFrame: (els) => setExcalidrawElements(els),
-            });
-            setExcalidrawElements(scene);
-          } else {
-            const scene = appendToScene(excalidrawAPI, [el]);
-            setExcalidrawElements(scene);
-            await new Promise((r) => setTimeout(r, 450)); // Thoughtful human pause between shapes
-          }
+        const freehand = built.length === 1 && built[0].type === "freedraw";
+        if (freehand) {
+          const scene = await animatePencilElement(excalidrawAPI, built[0], {
+            pointDelayMs: 16,
+            onFrame: (els) => setExcalidrawElements(els),
+          });
+          setExcalidrawElements(scene);
+        } else {
+          setLiveReveal({ id: `reveal-${Date.now()}-${index}`, elements: built });
+          await new Promise((resolve) => setTimeout(resolve, 230));
+          const scene = appendToScene(excalidrawAPI, built);
+          setExcalidrawElements(scene);
+          setLiveReveal(null);
         }
-        // Small pause between distinct canvas drawing objects
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((resolve) => setTimeout(resolve, 36));
       });
       return drawQueueRef.current;
     },
@@ -303,33 +315,37 @@ export default function Home() {
     async (result: MathAnalysisResult) => {
       if (!excalidrawAPI) return;
 
-      let drawings = result.canvasDrawings || [];
+      let drawings = polishCanvasDrawings(result.canvasDrawings, {
+        classification: result.classification,
+        origin: getLayoutContext().suggestedPlacement,
+      });
       if (drawings.length > 0) {
         drawings = drawings.map((d) => deconflictDrawing(d));
         setIsDrawingLive(true);
         setDrawStatus("Animating explanation on canvas…");
         const stamped = drawings;
         for (let i = 0; i < stamped.length; i++) {
-          setDrawStatus(`Drawing ${stamped[i].type} #${i + 1}…`);
+          setDrawStatus(`Building visual step ${i + 1}…`);
           const built = aiElementToExcalidraw(stamped[i], i, {
             sessionId: aiSessionRef.current,
             role: "explanation",
             diagramId: activeDiagramIdRef.current,
           });
-          for (const el of built) {
-            if (el.type === "freedraw") {
-              const scene = await animateFreedraw(excalidrawAPI, el, {
-                pointDelayMs: 28, // Natural human pencil stroke speed
-                onFrame: (els) => setExcalidrawElements(els),
-              });
-              setExcalidrawElements(scene);
-            } else {
-              const scene = appendToScene(excalidrawAPI, [el]);
-              setExcalidrawElements(scene);
-              await new Promise((r) => setTimeout(r, 450));
-            }
+          const freehand = built.length === 1 && built[0].type === "freedraw";
+          if (freehand) {
+            const scene = await animatePencilElement(excalidrawAPI, built[0], {
+              pointDelayMs: 16,
+              onFrame: (els) => setExcalidrawElements(els),
+            });
+            setExcalidrawElements(scene);
+          } else {
+            setLiveReveal({ id: `reveal-${Date.now()}-${i}`, elements: built });
+            await new Promise((resolve) => setTimeout(resolve, 230));
+            const scene = appendToScene(excalidrawAPI, built);
+            setExcalidrawElements(scene);
+            setLiveReveal(null);
           }
-          await new Promise((r) => setTimeout(r, 350));
+          await new Promise((resolve) => setTimeout(resolve, 36));
         }
         setIsDrawingLive(false);
         setDrawStatus("");
@@ -385,6 +401,7 @@ export default function Home() {
     aiSessionRef.current = `session-${Date.now()}`;
     const diagramId = opts.diagramId || `diagram-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     activeDiagramIdRef.current = diagramId;
+    drawingPromptRef.current = opts.promptText;
 
     const selection = opts.selection || [];
     const mode: AnalysisMode =
@@ -516,11 +533,13 @@ export default function Home() {
 
     // If user has a canvas selection, treat chat as a selection follow-up
     const hasSelection = selectedElements.length > 0;
+    const hasCanvasContent = (excalidrawAPI?.getSceneElements() || excalidrawElements)
+      .some((element: any) => !element.isDeleted);
     await runRealtimeAnalysis({
       promptText: text,
       imageBase64: finalCrop,
       openSolutionPanel: false,
-      mode: hasSelection ? "selection" : "followup",
+      mode: hasSelection ? "selection" : hasCanvasContent ? "followup" : "full",
       selection: hasSelection ? selectedElements : [],
       diagramId,
       diagramTitle: text.trim().slice(0, 72) || "Canvas update",
@@ -694,9 +713,6 @@ export default function Home() {
         sidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         activePageTitle={activePage?.title || "Excalidraw AI Workspace"}
-        isAnalyzing={isAnalyzing}
-        onAnalyzeCanvas={handleAnalyzeCanvas}
-        onOpenPresetLibrary={() => setPresetLibraryOpen(true)}
         onToggleChat={() => setIsChatOpen((prev) => !prev)}
         isMaximized={isCanvasMaximized}
         onToggleMaximize={() => setIsCanvasMaximized((prev) => !prev)}
@@ -727,6 +743,7 @@ export default function Home() {
             onElementsChange={(elems) => setExcalidrawElements(elems)}
             onSelectionChange={(selected) => setSelectedElements(selected)}
             initialElements={excalidrawElements}
+            liveReveal={liveReveal}
           />
 
           {/* Live AI drawing status pill */}
@@ -772,13 +789,41 @@ export default function Home() {
             isAnalyzing={isAnalyzing}
             onSendQuery={handleCanvasSelectionQuery}
             onClearSelection={() => setSelectedElements([])}
-            onClearAiOnly={handleClearAiOnly}
-            isUserLocked={isUserLocked}
-            onToggleLockUserLayers={handleToggleLockUserLayers}
           />
 
           {/* Floating AI Actions Dock */}
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 p-2 rounded-2xl border bg-background/90 backdrop-blur-xl shadow-2xl">
+          <div
+            className={`absolute left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-2xl border bg-background/95 p-2 shadow-xl backdrop-blur-xl transition-[bottom] duration-200 ${
+              selectedElements.length > 0 ? "bottom-24" : "bottom-5"
+            }`}
+          >
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 rounded-xl text-muted-foreground"
+                    title="Canvas actions"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="center" className="w-44">
+                <DropdownMenuItem onClick={handleToggleLockUserLayers} className="gap-2 text-xs">
+                  {isUserLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+                  {isUserLocked ? "Unlock user layers" : "Lock user layers"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleClearAiOnly}
+                  className="gap-2 text-xs text-destructive focus:text-destructive"
+                >
+                  <Eraser className="size-3.5" /> Clear AI annotations
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button
               variant="outline"
               size="sm"
@@ -798,7 +843,7 @@ export default function Home() {
                 ? "Drawing live…"
                 : isAnalyzing
                   ? "Analyzing…"
-                  : "Analyze Canvas ✨"}
+                  : "Analyze canvas"}
             </Button>
           </div>
 

@@ -4,16 +4,13 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Send, MousePointer2, Eraser, Lock, Unlock } from "lucide-react";
+import { Sparkles, Send, MousePointer2, X } from "lucide-react";
 
 interface CanvasQueryBarProps {
   selectedCount: number;
   isAnalyzing: boolean;
   onSendQuery: (query: string) => void;
   onClearSelection?: () => void;
-  onClearAiOnly?: () => void;
-  isUserLocked?: boolean;
-  onToggleLockUserLayers?: () => void;
 }
 
 export function CanvasQueryBar({
@@ -21,9 +18,6 @@ export function CanvasQueryBar({
   isAnalyzing,
   onSendQuery,
   onClearSelection,
-  onClearAiOnly,
-  isUserLocked = false,
-  onToggleLockUserLayers,
 }: CanvasQueryBarProps) {
   const [query, setQuery] = useState("");
 
@@ -34,71 +28,30 @@ export function CanvasQueryBar({
     setQuery("");
   };
 
+  if (selectedCount === 0) return null;
+
   return (
-    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-xl px-4">
-      <div className="bg-background/95 backdrop-blur-xl border border-border/60 shadow-2xl rounded-2xl p-2.5 flex flex-col gap-2 transition-all duration-200">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
-              <MousePointer2 className="w-3.5 h-3.5 text-indigo-500" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-semibold flex items-center gap-1.5">
-                Ask about selection
-                <Badge
-                  variant="outline"
-                  className="text-[10px] bg-indigo-500/10 text-indigo-600 border-indigo-500/20 px-1.5 py-0.5"
-                >
-                  {selectedCount} element{selectedCount === 1 ? "" : "s"}
-                </Badge>
-              </div>
-            </div>
+    <div className="absolute bottom-5 left-1/2 z-30 w-full max-w-2xl -translate-x-1/2 px-4">
+      <form
+        onSubmit={handleSubmit}
+        className="flex items-center gap-2 rounded-2xl border border-border/60 bg-background/95 p-2 shadow-xl backdrop-blur-xl"
+      >
+        <div className="hidden items-center gap-2 pl-1 sm:flex">
+          <div className="flex size-7 items-center justify-center rounded-xl bg-indigo-500/10">
+            <MousePointer2 className="size-3.5 text-indigo-500" />
           </div>
-
-          {/* Quick Provenance & Layer Action Controls */}
-          <div className="flex items-center gap-1">
-            {onToggleLockUserLayers && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={onToggleLockUserLayers}
-                className={`h-7 px-2 text-[11px] rounded-lg gap-1 ${
-                  isUserLocked
-                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title={isUserLocked ? "Unlock User Layers" : "Lock User Layers (Prevent Editing)"}
-              >
-                {isUserLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                {isUserLocked ? "USER Locked" : "Lock USER"}
-              </Button>
-            )}
-
-            {onClearAiOnly && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={onClearAiOnly}
-                className="h-7 px-2 text-[11px] rounded-lg gap-1 text-muted-foreground hover:text-destructive"
-                title="Clear AI annotations only (Keep user drawings)"
-              >
-                <Eraser className="w-3 h-3 text-purple-500" />
-                Clear AI
-              </Button>
-            )}
-          </div>
+          <Badge
+            variant="outline"
+            className="whitespace-nowrap border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-indigo-600"
+          >
+            {selectedCount} selected
+          </Badge>
         </div>
-
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={
-              selectedCount > 0
-                ? "Ask AI to solve, explain, or refactor selected elements..."
-                : "Select elements on canvas and type a prompt..."
+              "Ask about the selected diagram…"
             }
             className="h-9 text-xs bg-muted/40 border-muted rounded-xl focus-visible:ring-indigo-500"
           />
@@ -115,8 +68,19 @@ export function CanvasQueryBar({
             )}
             Ask
           </Button>
-        </form>
-      </div>
+          {onClearSelection && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onClearSelection}
+              className="size-8 shrink-0 rounded-xl text-muted-foreground"
+              title="Clear selection"
+            >
+              <X className="size-4" />
+            </Button>
+          )}
+      </form>
     </div>
   );
 }
