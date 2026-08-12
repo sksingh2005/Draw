@@ -6,7 +6,6 @@ import {
   Card,
   CardHeader,
   CardTitle,
-  CardDescription,
   CardContent,
 } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -24,8 +23,8 @@ import {
   Lightbulb,
   CheckCircle2,
   HelpCircle,
-  Share2,
   Copy,
+  Braces,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -39,7 +38,7 @@ interface SolutionPanelProps {
 export function SolutionPanel({ result, open, onClose }: SolutionPanelProps) {
   const [activeTab, setActiveTab] = useState<string>("steps");
   const [expandedPracticeId, setExpandedPracticeId] = useState<string | null>(null);
-  const [copiedFormula, setCopiedFormula] = useState(false);
+  const [copiedContent, setCopiedContent] = useState(false);
 
   if (!open || !result) return null;
 
@@ -51,11 +50,22 @@ export function SolutionPanel({ result, open, onClose }: SolutionPanelProps) {
     });
   };
 
-  const handleCopyLatex = () => {
-    if (!result?.latexFormula) return;
-    navigator.clipboard.writeText(result.latexFormula);
-    setCopiedFormula(true);
-    setTimeout(() => setCopiedFormula(false), 2000);
+  const isStructured = ["architecture", "schema", "flowchart"].includes(result.classification);
+  const copyableSource = result.mermaidCode || result.latexFormula;
+  const panelTitle =
+    result.classification === "architecture"
+      ? "Architecture breakdown"
+      : result.classification === "schema"
+        ? "Schema breakdown"
+        : result.classification === "flowchart"
+          ? "Flow breakdown"
+          : "Solution breakdown";
+
+  const handleCopySource = () => {
+    if (!copyableSource) return;
+    navigator.clipboard.writeText(copyableSource);
+    setCopiedContent(true);
+    setTimeout(() => setCopiedContent(false), 2000);
   };
 
   return (
@@ -68,7 +78,7 @@ export function SolutionPanel({ result, open, onClose }: SolutionPanelProps) {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-bold text-base">Mathematical Breakdown</h3>
+              <h3 className="font-bold text-base">{panelTitle}</h3>
               <Badge variant="outline" className="capitalize text-[10px] bg-indigo-500/10 text-indigo-600 border-indigo-500/30">
                 {result.classification}
               </Badge>
@@ -80,35 +90,53 @@ export function SolutionPanel({ result, open, onClose }: SolutionPanelProps) {
         </div>
 
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={handleCopyLatex} className="w-8 h-8 rounded-lg">
-            <Copy className="w-4 h-4" />
-          </Button>
+          {copyableSource && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleCopySource}
+              className="w-8 h-8 rounded-lg"
+              title={result.mermaidCode ? "Copy Mermaid source" : "Copy LaTeX"}
+            >
+              {copiedContent ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={onClose} className="w-8 h-8 rounded-lg">
             <X className="w-4 h-4" />
           </Button>
         </div>
       </div>
 
-      {/* Prominent Formula Display Banner */}
-      <div className="p-4 border-b bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5 text-center relative">
-        <div className="text-xs text-muted-foreground mb-1 font-medium">Canonical Mathematical Expression</div>
-        <KatexRenderer math={result.latexFormula} block={true} className="text-lg font-bold text-foreground" />
-        {copiedFormula && (
-          <span className="absolute bottom-1 right-3 text-[10px] text-emerald-600 font-semibold animate-pulse">
-            LaTeX Copied!
-          </span>
-        )}
-      </div>
+      {/* Result-aware summary: never show an empty math banner for diagrams. */}
+      {isStructured ? (
+        <div className="p-4 border-b bg-gradient-to-r from-indigo-500/5 via-sky-500/5 to-emerald-500/5 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+            <Braces className="w-4 h-4" /> Mermaid source → editable Excalidraw elements
+          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">{result.summary}</p>
+        </div>
+      ) : result.latexFormula ? (
+        <div className="p-4 border-b bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5 text-center relative">
+          <div className="text-xs text-muted-foreground mb-1 font-medium">Canonical mathematical expression</div>
+          <KatexRenderer math={result.latexFormula} block={true} className="text-lg font-bold text-foreground" />
+          {copiedContent && (
+            <span className="absolute bottom-1 right-3 text-[10px] text-emerald-600 font-semibold animate-pulse">
+              LaTeX copied
+            </span>
+          )}
+        </div>
+      ) : null}
 
       {/* Main Tabs Navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
         <div className="px-4 pt-3 border-b bg-background">
           <TabsList className="grid grid-cols-4 w-full bg-muted/60 p-1">
             <TabsTrigger value="steps" className="text-xs flex items-center gap-1">
-              <ListOrdered className="w-3.5 h-3.5" /> Steps
+              <ListOrdered className="w-3.5 h-3.5" /> {isStructured ? "Details" : "Steps"}
             </TabsTrigger>
             <TabsTrigger value="graph" className="text-xs flex items-center gap-1">
-              <LineChart className="w-3.5 h-3.5" /> Graph
+              {isStructured ? <Braces className="w-3.5 h-3.5" /> : <LineChart className="w-3.5 h-3.5" />}
+              {isStructured ? "Source" : "Graph"}
             </TabsTrigger>
             <TabsTrigger value="concept" className="text-xs flex items-center gap-1">
               <Lightbulb className="w-3.5 h-3.5" /> Concept
@@ -187,7 +215,21 @@ export function SolutionPanel({ result, open, onClose }: SolutionPanelProps) {
 
         {/* Tab 2: Interactive Function Graph */}
         <TabsContent value="graph" className="flex-1 overflow-y-auto p-4 m-0">
-          {result.graphConfig ? (
+          {isStructured && result.mermaidCode ? (
+            <div className="space-y-3">
+              <div className="rounded-xl border bg-muted/30 p-3">
+                <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold">
+                  <Braces className="w-3.5 h-3.5 text-indigo-500" /> Portable diagram source
+                </div>
+                <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">
+                  {result.mermaidCode}
+                </pre>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Edit and rebuild this source from its chat card. The generated shapes remain native and selectable on the canvas.
+              </p>
+            </div>
+          ) : result.graphConfig ? (
             <FunctionGrapher config={result.graphConfig} />
           ) : (
             <div className="text-center py-12 text-muted-foreground text-xs space-y-2">

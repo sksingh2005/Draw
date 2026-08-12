@@ -6,6 +6,7 @@ import {
   parseMathAnalysisResponse,
 } from "./math-parser";
 import { extractNewCanvasDrawings } from "./excalidraw-elements";
+import { resultUsesMermaidCanvas } from "./mermaid-canvas";
 import {
   WHITEBOARD_SYSTEM_PROMPT,
   buildWhiteboardUserPrompt,
@@ -152,6 +153,14 @@ export async function* streamAnalyzeCanvasContent(
       accumulated,
       emittedDrawCount
     );
+    const structuredDiagram = /"classification"\s*:\s*"(?:architecture|schema|flowchart)"/i.test(
+      accumulated
+    );
+
+    // Structured diagrams are laid out from their Mermaid source after the
+    // response completes. Keep primitive drawings as a fallback, but do not
+    // paint them early and then duplicate the same graph on the canvas.
+    if (structuredDiagram) continue;
 
     if (items.length > 0 && !drawingPhase) {
       drawingPhase = true;
@@ -175,8 +184,10 @@ export async function* streamAnalyzeCanvasContent(
   yield { type: "status", message: "Finalizing explanation…" };
   const result = parseResult(accumulated, params);
   const finalDrawings = result.canvasDrawings || [];
-  for (let i = emittedDrawCount; i < finalDrawings.length; i++) {
-    yield { type: "draw", element: finalDrawings[i], index: i };
+  if (!resultUsesMermaidCanvas(result)) {
+    for (let i = emittedDrawCount; i < finalDrawings.length; i++) {
+      yield { type: "draw", element: finalDrawings[i], index: i };
+    }
   }
   yield { type: "result", data: result };
 }

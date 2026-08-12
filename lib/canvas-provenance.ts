@@ -288,6 +288,111 @@ export function resolveNonOverlappingDrawings<
   }));
 }
 
+/** Find the nearest open position while preserving the proposed reading order. */
+export function findOpenBounds(
+  proposed: Bounds,
+  occupied: readonly Bounds[],
+  padding = 24
+): Bounds {
+  if (!occupied.some((item) => boundsOverlap(proposed, item, padding))) return proposed;
+
+  const candidates: Bounds[] = [proposed];
+  for (const item of occupied) {
+    candidates.push(
+      { ...proposed, x: item.x + item.width + padding, y: proposed.y },
+      { ...proposed, x: item.x - proposed.width - padding, y: proposed.y },
+      { ...proposed, x: proposed.x, y: item.y + item.height + padding },
+      { ...proposed, x: proposed.x, y: item.y - proposed.height - padding },
+      { ...proposed, x: item.x + item.width + padding, y: item.y + item.height + padding },
+      { ...proposed, x: item.x - proposed.width - padding, y: item.y + item.height + padding }
+    );
+  }
+
+  const open = candidates
+    .filter((candidate) => !occupied.some((item) => boundsOverlap(candidate, item, padding)))
+    .sort((a, b) => {
+      const distanceA = Math.hypot(a.x - proposed.x, a.y - proposed.y);
+      const distanceB = Math.hypot(b.x - proposed.x, b.y - proposed.y);
+      return distanceA - distanceB || a.y - b.y || a.x - b.x;
+    });
+  if (open[0]) return open[0];
+
+  const union = unionBounds([...occupied, proposed]);
+  return {
+    ...proposed,
+    x: (union?.x || proposed.x) + (union?.width || 0) + padding * 2,
+    y: proposed.y,
+  };
+}
+
+type CanvasPoint = { x: number; y: number };
+
+function distanceToBounds(point: CanvasPoint, bounds: Bounds): number {
+  const dx = Math.max(bounds.x - point.x, 0, point.x - (bounds.x + bounds.width));
+  const dy = Math.max(bounds.y - point.y, 0, point.y - (bounds.y + bounds.height));
+  return Math.hypot(dx, dy);
+}
+
+function closestBounds(point: CanvasPoint, bounds: readonly Bounds[], exclude?: Bounds): Bounds | null {
+  return bounds
+    .filter((bounds) => bounds !== exclude)
+    .map((bounds) => ({ bounds, distance: distanceToBounds(point, bounds) }))
+    .sort((a, b) => a.distance - b.distance)[0]?.bounds || null;
+}
+
+function edgePoint(bounds: Bounds, target: CanvasPoint, gap = 5): CanvasPoint {
+  const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  const dx = target.x - center.x || 1;
+  const dy = target.y - center.y || 1;
+  const factor = Math.min((bounds.width / 2 + gap) / Math.abs(dx), (bounds.height / 2 + gap) / Math.abs(dy));
+  return { x: center.x + dx * factor, y: center.y + dy * factor };
+}
+
+function lineHitsBounds(from: CanvasPoint, to: CanvasPoint, bounds: Bounds): boolean {
+  const steps = Math.max(8, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 24));
+  for (let step = 1; step < steps; step++) {
+    const ratio = step / steps;
+    const x = from.x + (to.x - from.x) * ratio;
+    const y = from.y + (to.y - from.y) * ratio;
+    if (x >= bounds.x - 12 && x <= bounds.x + bounds.width + 12 && y >= bounds.y - 12 && y <= bounds.y + bounds.height + 12) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Snap a model connector to node edges and introduce a clean elbow when needed. */
+export function routeConnectorAroundBounds(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  occupied: readonly Bounds[]
+): { x: number; y: number; width: number; height: number; points: [number, number][] } | null {
+  const source = closestBounds(start, occupied);
+  const target = closestBounds(end, occupied, source || undefined);
+  if (!source || !target) return null;
+  if (distanceToBounds(start, source) > 180 || distanceToBounds(end, target) > 180) return null;
+
+  const sourcePoint = edgePoint(source, { x: target.x + target.width / 2, y: target.y + target.height / 2 });
+  const targetPoint = edgePoint(target, { x: source.x + source.width / 2, y: source.y + source.height / 2 });
+  const blockers = occupied.filter((bounds) => bounds !== source && bounds !== target);
+  const directBlocked = blockers.some((bounds) => lineHitsBounds(sourcePoint, targetPoint, bounds));
+  const candidates = [
+    [sourcePoint, { x: targetPoint.x, y: sourcePoint.y }, targetPoint],
+    [sourcePoint, { x: sourcePoint.x, y: targetPoint.y }, targetPoint],
+  ];
+  const route = directBlocked
+    ? candidates.find((points) => !blockers.some((bounds) => lineHitsBounds(points[0], points[1], bounds) || lineHitsBounds(points[1], points[2], bounds))) || [sourcePoint, targetPoint]
+    : [sourcePoint, targetPoint];
+
+  return {
+    x: sourcePoint.x,
+    y: sourcePoint.y,
+    width: targetPoint.x - sourcePoint.x,
+    height: targetPoint.y - sourcePoint.y,
+    points: route.map((point) => [point.x - sourcePoint.x, point.y - sourcePoint.y]),
+  };
+}
+
 export function selectionBoundsFromElements(
   elements: readonly SceneElementLike[]
 ): Bounds | null {

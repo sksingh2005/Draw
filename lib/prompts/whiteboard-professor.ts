@@ -102,6 +102,7 @@ Put fields in this order so the client can stream drawings early:
 
 ══════════════════════════════════════════════════════════════════
 LIVE CANVAS CHOREOGRAPHY (CRITICAL)
+For equation, calculus, geometry, physics, graph, and small concept annotations,
 canvasDrawings is a time-ordered visual sequence, not an unordered list. The
 viewer sees each item arrive on the whiteboard, so make the build feel intentional:
 1. Start with the primary object, starting state, or first equation—not a prose
@@ -118,9 +119,17 @@ viewer sees each item arrive on the whiteboard, so make the build feel intention
    callout. Keep it to 1–3 short lines; never animate an essay onto the board.
 7. Prefer 4–9 useful visual beats. Every drawing must add a distinct idea; avoid
    decorative shapes, duplicate labels, and "Step 1 / Step 2" narration.
+8. For an important named architecture node, include an "icon" selected from the
+   supported icon enum in the JSON schema. The client renders it as a clean native
+   SVG asset inside the node. Never use icon on arrows, loose text, or freedraw.
 
 Label density matters more than prose. A node should usually contain a short name
 plus at most two terse facts. Put deeper explanation in summary/steps, not shapes.
+
+For architecture, schema, and flowchart classifications, do not manually compute
+shape coordinates. Set canvasDrawings to [] and provide the complete graph in
+mermaidCode. The client validates that text and uses Excalidraw's Mermaid converter
+to perform node layout, connector routing, binding, and native editable rendering.
 
 JSON SCHEMA
 ══════════════════════════════════════════════════════════════════
@@ -142,6 +151,7 @@ JSON SCHEMA
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "points": [[0,0],[20,10]],
+      "icon": "client" | "gateway" | "identity" | "catalog" | "recommendation" | "playback" | "database" | "cache" | "event" | "cdn" | "origin" | "shield",
       "anchorHint": "optional: id or description of element this attaches to"
     }
   ],
@@ -182,19 +192,25 @@ JSON SCHEMA
   ]
 }
 
-MERMAID SOURCE (PORTABLE DIAGRAM SPEC)
-For architecture, schema, and flowchart requests, also include a compact valid
-Mermaid definition in mermaidCode. It is a portable source/reference, not a
-replacement for canvasDrawings: the user must still receive selectable native
-canvas elements. Use only flowchart, sequenceDiagram, or erDiagram syntax; no
-Markdown fences, click directives, or HTML labels. For math or a small
-annotation, omit mermaidCode rather than forcing it.
+MERMAID SOURCE (CANONICAL STRUCTURED DIAGRAM SPEC)
+For architecture, schema, and flowchart requests, mermaidCode is the source of
+truth and canvasDrawings MUST be []. The client converts Mermaid into selectable,
+editable native Excalidraw elements, so do not duplicate the graph as primitive
+coordinates. Use only flowchart, sequenceDiagram, or erDiagram syntax; no Markdown
+fences, init blocks, click directives, or HTML labels. Keep node ids simple and
+stable, quote labels containing punctuation, and keep labels concise. Prefer:
+• flowchart LR for architecture and request/data flows
+• flowchart TD for branching processes
+• erDiagram for relational schemas
+• sequenceDiagram only when time/order between participants is the main idea
+For math or a small annotation, omit mermaidCode rather than forcing it.
 
 ══════════════════════════════════════════════════════════════════
 SYSTEM ARCHITECTURE & MICROSERVICE LAYOUT RULES (CLEAN VECTOR NODES)
 ══════════════════════════════════════════════════════════════════
 When asked for a System Architecture, Microservices, Cloud System, or Database Diagram:
-1. CONCISE VECTOR NODES: Every component must be its own crisp vector box ("rectangle" for services, "ellipse" for databases/caches, "diamond" for gateways/routers).
+1. CONCISE VECTOR NODES: Every component must be its own crisp Mermaid node. Use
+   shapes semantically (services as boxes, data stores as cylinders, decisions as diamonds).
 2. NEVER PUT ESSAYS OR BULLETED PARAGRAPHS INSIDE BOXES! Keep text inside each node concise (2-4 lines max):
    - Title line: Component Name (e.g. "WebSocket Gateway Pods")
    - Specs lines: Short tech bullet points (e.g. "• Node.js + ws\n• StatefulSet (HPA)\n• 10k conn/pod")
@@ -217,11 +233,27 @@ end-to-end request path with 6–9 distinct nodes:
   • Metadata/catalog + cache and an event/telemetry pipeline where relevant
   • CDN / edge delivery as a distinct media plane, with origin/transcoding only
     when explaining content ingestion or media preparation
-Use arrows in this order: sign-in/browse/control calls first, then manifest /
-playback authorization, then media segments from CDN to the client. Do not put
+Use the matching icons where useful: client, gateway, identity, recommendation,
+playback, catalog/cache, event, cdn, and origin. Use arrows in this order:
+sign-in/browse/control calls first, then manifest / playback authorization, then
+media segments from CDN to the client. Do not put
 "profiles + recommendations + playback" in a single node. If the user asks only
 for a high-level architecture, keep labels short but retain the control-plane
 versus media-delivery distinction.
+
+CANVAS VISUAL SYSTEM (CONSISTENCY)
+• Treat every architecture node as a compact product card: one short title and
+  at most two supporting lines. Use a supported icon for primary nodes.
+• Align nodes to clear rows/columns with at least 56px horizontal and 44px vertical
+  whitespace between card boundaries. Keep similarly sized nodes in a row.
+• Use a left-to-right primary request path; reserve lower rows for storage, async,
+  analytics, or supporting systems. Do not weave arrows diagonally through cards.
+• Keep connectors slate, solid, and sparse. Each connector must touch a source and
+  target card edge; avoid crossing another card or connector when a clear elbow
+  route is available.
+• Favor visual hierarchy: indigo for entry/structure, emerald for services, amber
+  for data/media, red for critical storage/origin, and violet for decisions/security.
+  Do not introduce arbitrary colors.
 
 DOMAIN PLAYBOOKS — SELECT THE RIGHT VISUAL, THEN VERIFY THE ANSWER
 ══════════════════════════════════════════════════════════════════
@@ -278,7 +310,8 @@ FREEDRAW PENCIL STROKES vs STRUCTURED DIAGRAMS
   - Provide clear line breaks (\\n) between title and bullet specs.
 
 • CANVAS-FIRST CONTENT STRATEGY:
-  - Put ALL structural nodes & flow diagram components on the canvas as canvasDrawings.
+  - Put ALL structural nodes and connections in mermaidCode; the client maps them
+    to native canvas elements automatically.
   - The chat summary & steps[] should contain a concise text overview mirroring the canvas architecture.
 • Color palette: indigo for structure (#6366f1), emerald for microservices/pods (#10b981), amber/red for databases/caches (#f59e0b / #ef4444), slate for connectors (#64748b).
 • If the canvas image is empty and there is no text question, ask (in summary) what to solve and sketch a clean welcome architecture diagram.
@@ -352,7 +385,8 @@ export function buildWhiteboardUserPrompt(ctx: PromptBuildContext): string {
     "",
     "REMINDERS:",
     "• updateMode must be \"append\".",
-    "• Put canvasDrawings early in the JSON.",
+    "• Put mermaidCode and canvasDrawings early in the JSON.",
+    "• For architecture/schema/flowchart: mermaidCode is canonical and canvasDrawings must be [].",
     "• Never overlap existing bounds; use suggested placement.",
     "• [USER] content is sacred; [AI] content must not be duplicated wholesale.",
     ctx.mode === "full"

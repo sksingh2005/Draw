@@ -15,9 +15,11 @@ export type ExcalidrawImperativeAPI = any;
 
 interface ExcalidrawCanvasProps {
   initialElements?: readonly ExcalidrawElement[];
+  initialFiles?: Record<string, Record<string, unknown>>;
   /** A short-lived preview shown while generated elements are being placed. */
   liveReveal?: { id: string; elements: readonly ExcalidrawElement[] } | null;
   onElementsChange?: (elements: readonly ExcalidrawElement[]) => void;
+  onFilesChange?: (files: Record<string, Record<string, unknown>>) => void;
   onSelectionChange?: (selectedElements: readonly ExcalidrawElement[]) => void;
   onApiReady?: (api: ExcalidrawImperativeAPI) => void;
 }
@@ -85,6 +87,20 @@ function LiveCanvasReveal({
 
         if (type === "freedraw") return null;
 
+        if (type === "image") {
+          const file = api.getFiles?.()[String(element.fileId)];
+          if (!file?.dataURL) return null;
+          return (
+            <img
+              key={String(element.id)}
+              alt=""
+              src={file.dataURL}
+              className="absolute"
+              style={styleFor(element)}
+            />
+          );
+        }
+
         const isContainer = containers.has(String(element.id));
         const label = isContainer
           ? reveal.elements.find((candidate) => String(candidate.containerId || "") === String(element.id))
@@ -122,14 +138,17 @@ function LiveCanvasReveal({
 
 export function ExcalidrawCanvas({
   initialElements = [],
+  initialFiles = {},
   liveReveal = null,
   onElementsChange,
+  onFilesChange,
   onSelectionChange,
   onApiReady,
 }: ExcalidrawCanvasProps) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const lastSelectionKey = useRef<string>("");
   const lastElementsKey = useRef<string>("");
+  const lastFilesKey = useRef<string>("");
   const stampedIds = useRef<Set<string>>(new Set());
 
   const handleExcalidrawAPI = useCallback(
@@ -141,7 +160,7 @@ export function ExcalidrawCanvas({
   );
 
   const handleChange = useCallback(
-    (elements: readonly ExcalidrawElement[], appState: ExcalidrawAppState) => {
+    (elements: readonly ExcalidrawElement[], appState: ExcalidrawAppState, files: Record<string, Record<string, unknown>>) => {
       let hasNewStamp = false;
       const stamped = elements.map((el) => {
         const id = String(el.id);
@@ -169,6 +188,15 @@ export function ExcalidrawCanvas({
         if (onElementsChange) onElementsChange(stamped as any);
       }
 
+      const filesKey = Object.values(files || {})
+        .map((file: any) => `${file.id}:${file.version || 0}`)
+        .sort()
+        .join("|");
+      if (filesKey !== lastFilesKey.current) {
+        lastFilesKey.current = filesKey;
+        onFilesChange?.(files || {});
+      }
+
       if (onSelectionChange && appState) {
         const selectedIds: string[] = Array.isArray(appState.selectedElementIds)
           ? appState.selectedElementIds
@@ -188,7 +216,7 @@ export function ExcalidrawCanvas({
         }
       }
     },
-    [onElementsChange, onSelectionChange]
+    [onElementsChange, onFilesChange, onSelectionChange]
   );
 
   return (
@@ -197,6 +225,7 @@ export function ExcalidrawCanvas({
         excalidrawAPI={handleExcalidrawAPI}
         initialData={{
           elements: initialElements as any,
+          files: initialFiles as any,
           appState: {
             viewBackgroundColor: "#ffffff",
             currentItemFontFamily: 1,

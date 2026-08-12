@@ -3,7 +3,7 @@
  * and progressively animate them onto the whiteboard in real time.
  */
 
-import type { AiCanvasElement } from "./math-parser";
+import type { AiCanvasElement, CanvasIconName } from "./math-parser";
 import { stampAiProvenance } from "./canvas-provenance";
 
 export type ExcalidrawElement = Record<string, unknown>;
@@ -19,6 +19,16 @@ export interface AiBuildOptions {
   role?: string;
   /** Groups all generated scene elements so a prior diagram can be reselected. */
   diagramId?: string;
+}
+
+export interface AiCanvasIconAsset {
+  element: ExcalidrawElement;
+  file: {
+    id: string;
+    mimeType: "image/svg+xml";
+    dataURL: string;
+    created: number;
+  };
 }
 
 function randId(prefix: string): string {
@@ -62,13 +72,14 @@ export function aiElementToExcalidraw(
   opts: AiBuildOptions = {}
 ): ExcalidrawElement[] {
   const baseId = randId(`ai-${item.type}-${index}`);
+  const groupIds = item.icon ? [baseId] : [];
   const strokeColor = item.strokeColor || "#6366f1";
   const backgroundColor = item.backgroundColor || "transparent";
   // Solid fills read as product UI; hachure looks noisy for architecture
   const fillStyle = item.fillStyle || "solid";
   const provenance = { ...opts, index };
   // Cleaner look for system diagrams; slightly sketchy for freehand math
-  const roughness = item.type === "freedraw" ? 1 : 0.4;
+  const roughness = item.type === "freedraw" ? 1 : 0;
   const elements: ExcalidrawElement[] = [];
 
   if (item.type === "freedraw" && item.points && item.points.length > 0) {
@@ -165,7 +176,7 @@ export function aiElementToExcalidraw(
           roundness: null,
           text: formattedText,
           fontSize,
-          fontFamily: 1,
+          fontFamily: 2,
           textAlign: "left",
           verticalAlign: "top",
           containerId: null,
@@ -188,8 +199,8 @@ export function aiElementToExcalidraw(
   const textId = formattedText ? randId(`ai-text-${index}`) : null;
 
   const fontSize = item.fontSize || (formattedText && formattedText.length > 80 ? 14 : 15);
-  const paddingX = 18;
-  const paddingY = 14;
+  const paddingX = item.icon ? 58 : 20;
+  const paddingY = 16;
   const textDimensions = formattedText
     ? calcTextBounds(formattedText, fontSize)
     : { width: 0, height: 0 };
@@ -197,8 +208,8 @@ export function aiElementToExcalidraw(
   const minRequiredWidth = formattedText ? textDimensions.width + paddingX * 2 : 140;
   const minRequiredHeight = formattedText ? textDimensions.height + paddingY * 2 : 90;
 
-  const boxWidth = Math.max(item.width || 240, minRequiredWidth, 160);
-  const boxHeight = Math.max(item.height || 100, minRequiredHeight, 72);
+  const boxWidth = Math.max(item.width || 252, minRequiredWidth, 190);
+  const boxHeight = Math.max(item.height || 108, minRequiredHeight, 84);
 
   const bg =
     backgroundColor === "transparent" || !backgroundColor
@@ -224,6 +235,7 @@ export function aiElementToExcalidraw(
         strokeWidth: item.strokeWidth || 2,
         roughness,
         roundness: shapeType === "ellipse" ? null : { type: 3 },
+        groupIds,
         boundElements: textId ? [{ type: "text", id: textId }] : null,
       },
       provenance
@@ -249,10 +261,11 @@ export function aiElementToExcalidraw(
           roundness: null,
           text: formattedText,
           fontSize,
-          fontFamily: 3, // code / clean sans-like in Excalidraw
-          textAlign: "center",
+          fontFamily: 2,
+          textAlign: item.icon ? "left" : "center",
           verticalAlign: "middle",
           containerId: baseId,
+          groupIds,
           originalText: formattedText,
           autoResize: false,
           lineHeight: 1.25,
@@ -263,6 +276,80 @@ export function aiElementToExcalidraw(
   }
 
   return elements;
+}
+
+const ICON_PATHS: Record<CanvasIconName, string> = {
+  client: '<rect x="13" y="17" width="38" height="24" rx="3"/><path d="M24 51h16M32 41v10"/>',
+  gateway: '<path d="M12 22h40v30H12zM21 22v-8h22v8M20 37h24M28 29v16M36 29v16"/>',
+  identity: '<circle cx="32" cy="23" r="10"/><path d="M14 53c2-10 10-16 18-16s16 6 18 16"/>',
+  catalog: '<path d="M14 17h36v38H14zM14 25h36M22 33h20M22 41h14"/>',
+  recommendation: '<path d="m32 12 5.5 12 13 1-10 8 3 13-11-6-11 6 3-13-10-8 13-1z"/>',
+  playback: '<rect x="11" y="16" width="42" height="32" rx="6"/><path d="m29 25 12 7-12 7z" fill="none"/>',
+  database: '<ellipse cx="32" cy="17" rx="18" ry="7"/><path d="M14 17v27c0 4 8 7 18 7s18-3 18-7V17M14 30c0 4 8 7 18 7s18-3 18-7"/>',
+  cache: '<path d="M16 23h32v25H16zM22 16h20v7M22 35h20"/>',
+  event: '<path d="M14 17h36v30H14zM21 25h22M21 33h14M21 41h19"/><path d="m43 46 5 5 8-10"/>',
+  cdn: '<path d="M20 47h28a11 11 0 0 0 0-22 16 16 0 0 0-30-4A11 11 0 0 0 20 47z"/>',
+  origin: '<path d="M32 12c10 10 15 18 15 27a15 15 0 1 1-30 0c0-9 5-17 15-27z"/><path d="M32 31c3 3 5 6 5 10a5 5 0 0 1-10 0c0-4 2-7 5-10z"/>',
+  shield: '<path d="M32 11 49 18v13c0 11-7 19-17 23-10-4-17-12-17-23V18z"/><path d="m24 32 5 5 11-12"/>',
+};
+
+function svgDataUrl(icon: CanvasIconName, color: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[icon]}</svg>`;
+  // Excalidraw's file loader decodes image payloads with atob(), so use a
+  // base64 data URL rather than a percent-encoded SVG URL.
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
+}
+
+/**
+ * Build a small trusted SVG image for a labelled AI node. The model supplies only
+ * an enum name; it never supplies executable or arbitrary SVG markup.
+ */
+export function aiIconToExcalidraw(
+  item: AiCanvasElement,
+  built: readonly ExcalidrawElement[],
+  index = 0,
+  opts: AiBuildOptions = {}
+): AiCanvasIconAsset | null {
+  if (!item.icon) return null;
+  const container = built.find((element) =>
+    ["rectangle", "ellipse", "diamond"].includes(String(element.type))
+  );
+  if (!container) return null;
+
+  const fileId = randId(`ai-icon-${item.icon}-${index}`);
+  const iconSize = 28;
+  const x = Number(container.x) + 18;
+  const y = Number(container.y) + 18;
+  const groupIds = [String(container.id)];
+  const color = String(container.strokeColor || "#6366f1");
+
+  return {
+    file: {
+      id: fileId,
+      mimeType: "image/svg+xml",
+      dataURL: svgDataUrl(item.icon, color),
+      created: Date.now(),
+    },
+    element: baseProps(
+      {
+        id: randId(`ai-icon-element-${index}`),
+        type: "image",
+        x,
+        y,
+        width: iconSize,
+        height: iconSize,
+        fileId,
+        status: "saved",
+        scale: [1, 1],
+        crop: null,
+        groupIds,
+        strokeColor: color,
+        backgroundColor: "transparent",
+        boundElements: null,
+      },
+      { ...opts, index }
+    ),
+  };
 }
 
 /** Word-wrap long single lines into ~maxCharsPerLine columns */
@@ -639,5 +726,13 @@ function normalizeDrawing(elem: Record<string, unknown>): AiCanvasElement {
     strokeWidth: elem.strokeWidth ? Number(elem.strokeWidth) : undefined,
     strokeStyle: elem.strokeStyle as AiCanvasElement["strokeStyle"],
     fontSize: elem.fontSize ? Number(elem.fontSize) : undefined,
+    icon: isCanvasIcon(elem.icon) ? elem.icon : undefined,
   };
+}
+
+function isCanvasIcon(value: unknown): value is CanvasIconName {
+  return typeof value === "string" && [
+    "client", "gateway", "identity", "catalog", "recommendation", "playback",
+    "database", "cache", "event", "cdn", "origin", "shield",
+  ].includes(value);
 }

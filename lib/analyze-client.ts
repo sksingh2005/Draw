@@ -1,5 +1,6 @@
 import type { MathAnalysisResult, AiCanvasElement, CanvasCoordinates } from "./math-parser";
 import type { AnalysisMode } from "./prompts/whiteboard-professor";
+import { resultUsesMermaidCanvas } from "./mermaid-canvas";
 
 export type ClientStreamEvent =
   | { type: "status"; message: string }
@@ -60,7 +61,7 @@ export async function streamAnalyze(
     const json = await res.json();
     if (json.success && json.data) {
       const data = json.data as MathAnalysisResult;
-      if (data.canvasDrawings) {
+      if (data.canvasDrawings && !resultUsesMermaidCanvas(data)) {
         for (let i = 0; i < data.canvasDrawings.length; i++) {
           await params.onEvent({
             type: "draw",
@@ -112,7 +113,7 @@ export async function streamAnalyze(
         await params.onEvent(event);
         if (event.type === "result") finalResult = event.data;
         if (event.type === "error") throw new Error(event.message);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (err instanceof SyntaxError) continue;
         throw err;
       }

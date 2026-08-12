@@ -34,19 +34,23 @@ import {
 import { streamAnalyze } from "@/lib/analyze-client";
 import {
   aiElementToExcalidraw,
+  aiIconToExcalidraw,
   animatePencilElement,
   appendToScene,
 } from "@/lib/excalidraw-elements";
 import { polishCanvasDrawings } from "@/lib/drawing-polish";
+import { mermaidToCanvas, resultUsesMermaidCanvas } from "@/lib/mermaid-canvas";
 import {
   buildLayoutMap,
   resolveNonOverlappingDrawings,
-  boundsOverlap,
+  findOpenBounds,
+  routeConnectorAroundBounds,
   selectionBoundsFromElements,
   summarizeSelection,
   AI_DIAGRAM_KEY,
   ensureUserProvenance,
   filterOnlyUserElements,
+  elementBounds,
   setElementsLockState,
   type Bounds,
 } from "@/lib/canvas-provenance";
@@ -67,6 +71,7 @@ export default function Home() {
 
   // Canvas elements & Chat state
   const [excalidrawElements, setExcalidrawElements] = useState<readonly any[]>([]);
+  const [excalidrawFiles, setExcalidrawFiles] = useState<Record<string, Record<string, unknown>>>({});
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   // AI Analysis state
@@ -101,6 +106,7 @@ export default function Home() {
       setActivePageIdState(current.id);
       setActivePage(current);
       setExcalidrawElements(getPageElements(current) as any);
+      setExcalidrawFiles(current.excalidrawFiles || {});
       setMessages(current.messages || []);
     }
   }, []);
@@ -111,11 +117,12 @@ export default function Home() {
     const updatedPage: WorkspacePage = {
       ...activePage,
       excalidrawElements: excalidrawElements as any,
+      excalidrawFiles,
       messages,
       updatedAt: Date.now(),
     };
     savePage(updatedPage);
-  }, [excalidrawElements, messages, activePage]);
+  }, [excalidrawElements, excalidrawFiles, messages, activePage]);
 
   /** Ownership-tagged layout map + free-space placement for the LLM. */
   const getLayoutContext = useCallback(
@@ -135,7 +142,12 @@ export default function Home() {
   const getConversationSnippet = useCallback(() => {
     return messages
       .slice(-4)
-      .map((m) => `${m.sender === "user" ? "User" : "AI"}: ${m.text.slice(0, 160)}`)
+      .map((m) => {
+        const line = `${m.sender === "user" ? "User" : "AI"}: ${m.text.slice(0, 160)}`;
+        return m.mermaidCode
+          ? `${line}\nCurrent portable diagram source:\n${m.mermaidCode.slice(0, 1800)}`
+          : line;
+      })
       .join("\n");
   }, [messages]);
 
@@ -148,11 +160,13 @@ export default function Home() {
       setActivePage(target);
       const newElements = getPageElements(target) as any;
       setExcalidrawElements(newElements);
+      setExcalidrawFiles(target.excalidrawFiles || {});
       setMessages(target.messages || []);
       setCurrentResult(null);
       setIsPanelOpen(false);
 
       if (excalidrawAPI) {
+        excalidrawAPI.addFiles?.(Object.values(target.excalidrawFiles || {}));
         excalidrawAPI.updateScene({ elements: newElements });
       }
     }
@@ -232,30 +246,39 @@ export default function Home() {
       y: item.y + ctx.dy,
     };
 
-    // Calculate realistic bounding box for shapes & text callouts
-    let itemWidth = Math.max(120, next.width || 120);
-    let itemHeight = Math.max(60, next.height || 60);
+    const isConnector = item.type === "arrow" || item.type === "line" || item.type === "freedraw";
+    const isNode = item.type === "rectangle" || item.type === "ellipse" || item.type === "diamond";
+
+    // Match the native card builder so collision checks reserve the final space,
+    // including the left icon gutter when the model selected an SVG icon.
+    let itemWidth = Math.max(isNode ? 252 : 120, next.width || 120);
+    let itemHeight = Math.max(isNode ? 108 : 60, next.height || 60);
 
     if (item.text) {
       const lines = item.text.split("\n");
       const maxLineLen = Math.max(...lines.map((l) => l.length), 1);
-      itemWidth = Math.max(itemWidth, Math.min(420, maxLineLen * 9 + 30));
-      itemHeight = Math.max(itemHeight, lines.length * 24 + 30);
+      itemWidth = Math.max(itemWidth, Math.min(420, maxLineLen * 9 + (item.icon ? 82 : 40)));
+      itemHeight = Math.max(itemHeight, lines.length * 24 + 36);
     }
 
-    const isConnector = item.type === "arrow" || item.type === "line" || item.type === "freedraw";
-
     if (!isConnector && ctx.occupied.length > 0) {
-      let attempts = 0;
-      while (attempts < 20) {
-        const candidate = { x: next.x, y: next.y, width: itemWidth, height: itemHeight };
-        const overlappingItem = ctx.occupied.find((o) => boundsOverlap(candidate, o, 16));
+      const openBounds = findOpenBounds(
+        { x: next.x, y: next.y, width: itemWidth, height: itemHeight },
+        ctx.occupied,
+        24
+      );
+      next.x = openBounds.x;
+      next.y = openBounds.y;
+    }
 
-        if (!overlappingItem) break;
-
-        // Shift down past the overlapping element's bottom boundary + padding
-        next.y = overlappingItem.y + overlappingItem.height + 24;
-        attempts++;
+    if ((item.type === "arrow" || item.type === "line") && ctx.occupied.length > 1) {
+      const route = routeConnectorAroundBounds(
+        { x: next.x, y: next.y },
+        { x: next.x + next.width, y: next.y + next.height },
+        ctx.occupied
+      );
+      if (route) {
+        next = { ...next, ...route };
       }
     }
 
@@ -284,11 +307,20 @@ export default function Home() {
           promptText: drawingPromptRef.current,
         });
         const safe = deconflictDrawing(polished);
-        const built = aiElementToExcalidraw(safe, index, {
+        let built = aiElementToExcalidraw(safe, index, {
           sessionId: aiSessionRef.current,
           role: "explanation",
           diagramId: activeDiagramIdRef.current,
         });
+        const iconAsset = aiIconToExcalidraw(safe, built, index, {
+          sessionId: aiSessionRef.current,
+          role: "explanation",
+          diagramId: activeDiagramIdRef.current,
+        });
+        if (iconAsset) {
+          excalidrawAPI.addFiles?.([iconAsset.file]);
+          built = [...built, iconAsset.element];
+        }
         const freehand = built.length === 1 && built[0].type === "freedraw";
         if (freehand) {
           const scene = await animatePencilElement(excalidrawAPI, built[0], {
@@ -326,11 +358,20 @@ export default function Home() {
         const stamped = drawings;
         for (let i = 0; i < stamped.length; i++) {
           setDrawStatus(`Building visual step ${i + 1}…`);
-          const built = aiElementToExcalidraw(stamped[i], i, {
+          let built = aiElementToExcalidraw(stamped[i], i, {
             sessionId: aiSessionRef.current,
             role: "explanation",
             diagramId: activeDiagramIdRef.current,
           });
+          const iconAsset = aiIconToExcalidraw(stamped[i], built, i, {
+            sessionId: aiSessionRef.current,
+            role: "explanation",
+            diagramId: activeDiagramIdRef.current,
+          });
+          if (iconAsset) {
+            excalidrawAPI.addFiles?.([iconAsset.file]);
+            built = [...built, iconAsset.element];
+          }
           const freehand = built.length === 1 && built[0].type === "freedraw";
           if (freehand) {
             const scene = await animatePencilElement(excalidrawAPI, built[0], {
@@ -380,6 +421,60 @@ export default function Home() {
       setDrawStatus("");
     },
     [excalidrawAPI, deconflictDrawing, getLayoutContext, enqueueLiveDraw]
+  );
+
+  /**
+   * Turn a portable Mermaid definition into native, editable Excalidraw
+   * elements. Re-rendering a saved source replaces only that AI diagram.
+   */
+  const insertMermaidOnCanvas = useCallback(
+    async (source: string, diagramId: string, replaceExisting = false) => {
+      if (!excalidrawAPI) throw new Error("Canvas is not ready yet.");
+
+      setIsDrawingLive(true);
+      setDrawStatus("Auto-layouting nodes and connectors…");
+
+      const scene = excalidrawAPI.getSceneElements().filter((element: any) => !element.isDeleted);
+      const existingDiagram = scene.filter(
+        (element: any) => element.customData?.[AI_DIAGRAM_KEY] === diagramId
+      );
+      const existingBounds = selectionBoundsFromElements(existingDiagram);
+      const retainedScene = replaceExisting
+        ? scene.filter((element: any) => element.customData?.[AI_DIAGRAM_KEY] !== diagramId)
+        : scene;
+      const placement =
+        (replaceExisting && existingBounds) || getLayoutContext().suggestedPlacement;
+
+      const generated = await mermaidToCanvas(source, placement, {
+        sessionId: aiSessionRef.current,
+        diagramId,
+        occupied: retainedScene.map(elementBounds),
+      });
+      const files = Object.values(generated.files);
+      if (files.length) {
+        excalidrawAPI.addFiles?.(files);
+        setExcalidrawFiles((current) => ({ ...current, ...generated.files }));
+      }
+
+      const nextScene = [...retainedScene, ...generated.elements];
+      excalidrawAPI.updateScene({ elements: nextScene });
+      setExcalidrawElements(nextScene);
+      setSelectedElements(generated.elements);
+
+      // Show the complete graph at a readable zoom instead of leaving newly
+      // generated content outside the current viewport.
+      excalidrawAPI.scrollToContent?.(generated.elements, {
+        fitToContent: true,
+        viewportZoomFactor: 0.82,
+        minZoom: 0.2,
+        maxZoom: 1,
+        animate: true,
+        duration: 420,
+      });
+      setIsDrawingLive(false);
+      setDrawStatus("");
+    },
+    [excalidrawAPI, getLayoutContext]
   );
 
   /** Shared realtime analyze pipeline for canvas button, chat, and selection. */
@@ -439,6 +534,7 @@ export default function Home() {
     const selBounds = selectionBoundsFromElements(selection);
     const coordinates = selBounds || layout.suggestedPlacement;
     let streamedDrawCount = 0;
+    let renderedMermaid = false;
 
     try {
       const result = await streamAnalyze({
@@ -468,6 +564,15 @@ export default function Home() {
             streamedDrawCount++;
             await enqueueLiveDraw(event.element, event.index);
           } else if (event.type === "result") {
+            if (resultUsesMermaidCanvas(event.data) && event.data.mermaidCode) {
+              try {
+                await insertMermaidOnCanvas(event.data.mermaidCode, diagramId);
+                renderedMermaid = true;
+              } catch (error) {
+                console.warn("Mermaid auto-layout failed; using primitive fallback:", error);
+                setDrawStatus("Auto-layout failed; drawing safe fallback…");
+              }
+            }
             setCurrentResult(event.data);
             if (opts.openSolutionPanel) setIsPanelOpen(true);
 
@@ -494,7 +599,7 @@ export default function Home() {
 
       await drawQueueRef.current;
 
-      if (result && streamedDrawCount === 0) {
+      if (result && streamedDrawCount === 0 && !renderedMermaid) {
         await insertAiExplanationOnCanvas(result);
       }
     } catch (err: any) {
@@ -586,6 +691,29 @@ export default function Home() {
     excalidrawAPI.updateScene({ appState: { selectedElementIds } });
     setSelectedElements(matching);
     excalidrawAPI.scrollToContent?.(matching, { fitToContent: true });
+  };
+
+  const handleRenderMermaid = async (source: string, diagramId: string, messageId: string) => {
+    aiSessionRef.current = `session-${Date.now()}`;
+    try {
+      await insertMermaidOnCanvas(source, diagramId, true);
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                mermaidCode: source,
+                analysisResult: message.analysisResult
+                  ? { ...message.analysisResult, mermaidCode: source }
+                  : message.analysisResult,
+              }
+            : message
+        )
+      );
+    } finally {
+      setIsDrawingLive(false);
+      setDrawStatus("");
+    }
   };
 
   // Insert Formula Preset into Excalidraw Scene
@@ -741,8 +869,10 @@ export default function Home() {
           <ExcalidrawCanvas
             onApiReady={(api) => setExcalidrawAPI(api)}
             onElementsChange={(elems) => setExcalidrawElements(elems)}
+            onFilesChange={(files) => setExcalidrawFiles(files)}
             onSelectionChange={(selected) => setSelectedElements(selected)}
             initialElements={excalidrawElements}
+            initialFiles={excalidrawFiles}
             liveReveal={liveReveal}
           />
 
@@ -869,6 +999,7 @@ export default function Home() {
             messages={messages}
             onSendMessage={handleSendChatMessage}
             onFocusDiagram={handleFocusDiagram}
+            onRenderMermaid={handleRenderMermaid}
             onAttachCanvasCrop={async () => {
               const target = selectedElements.length > 0 ? selectedElements : undefined;
               return exportExcalidrawSnapshot(target);

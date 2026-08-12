@@ -29,6 +29,9 @@ import {
   Layers,
   Focus,
   Braces,
+  Copy,
+  Check,
+  RefreshCw,
 } from "lucide-react";
 
 interface ChatPanelProps {
@@ -36,6 +39,7 @@ interface ChatPanelProps {
   onSendMessage: (text: string, imageCrop?: string) => void;
   onAttachCanvasCrop: () => Promise<string | null>;
   onFocusDiagram: (diagramId: string) => void;
+  onRenderMermaid: (source: string, diagramId: string, messageId: string) => Promise<void>;
   isOpen: boolean;
   onToggleOpen: () => void;
   isAnalyzing: boolean;
@@ -149,6 +153,15 @@ function AnalysisCard({ result }: { result: MathAnalysisResult }) {
                 {drawCount} canvas mark{drawCount === 1 ? "" : "s"}
               </Badge>
             )}
+            {result.mermaidCode && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1 bg-sky-500/5 text-sky-700 border-sky-500/20"
+              >
+                <Braces className="w-3 h-3" />
+                Auto-layout · editable
+              </Badge>
+            )}
             {result.updateMode && (
               <Badge variant="outline" className="text-[10px] text-muted-foreground">
                 append-only
@@ -245,11 +258,88 @@ function AnalysisCard({ result }: { result: MathAnalysisResult }) {
   );
 }
 
+function MermaidSourceEditor({
+  source,
+  diagramId,
+  messageId,
+  onRender,
+}: {
+  source: string;
+  diagramId: string;
+  messageId: string;
+  onRender: ChatPanelProps["onRenderMermaid"];
+}) {
+  const [draft, setDraft] = useState(source);
+  const [copied, setCopied] = useState(false);
+  const [isRendering, setIsRendering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const copySource = async () => {
+    await navigator.clipboard.writeText(draft);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const renderSource = async () => {
+    setIsRendering(true);
+    setError(null);
+    try {
+      await onRender(draft, diagramId, messageId);
+    } catch (renderError) {
+      setError(renderError instanceof Error ? renderError.message : "Could not render this source.");
+    } finally {
+      setIsRendering(false);
+    }
+  };
+
+  return (
+    <details className="rounded-xl border bg-muted/30 text-left overflow-hidden group">
+      <summary className="cursor-pointer px-2.5 py-2 text-[10px] font-semibold text-muted-foreground flex items-center justify-between gap-2 hover:text-foreground">
+        <span className="flex items-center gap-1.5">
+          <Braces className="w-3 h-3 text-indigo-500" /> Diagram source
+        </span>
+        <span className="font-normal opacity-70">Mermaid · click to edit</span>
+      </summary>
+      <div className="border-t bg-background p-2 space-y-2">
+        <textarea
+          aria-label="Editable Mermaid diagram source"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          spellCheck={false}
+          className="w-full min-h-40 resize-y rounded-lg border bg-slate-950 px-2.5 py-2 font-mono text-[10px] leading-relaxed text-slate-100 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15"
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className={`text-[10px] ${error ? "text-destructive" : "text-muted-foreground"}`}>
+            {error || "Edit the text, then rebuild this diagram without touching the rest of the board."}
+          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button type="button" variant="ghost" size="sm" onClick={copySource} className="h-7 px-2 text-[10px] gap-1">
+              {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={renderSource}
+              disabled={isRendering || !draft.trim()}
+              className="h-7 px-2.5 text-[10px] gap-1 bg-indigo-600 text-white hover:bg-indigo-500"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRendering ? "animate-spin" : ""}`} />
+              {isRendering ? "Laying out…" : "Update canvas"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export function ChatPanel({
   messages,
   onSendMessage,
   onAttachCanvasCrop,
   onFocusDiagram,
+  onRenderMermaid,
   isOpen,
   onToggleOpen,
   isAnalyzing,
@@ -296,7 +386,7 @@ export function ChatPanel({
   const showSuggestions = messages.length <= 1 && !isAnalyzing;
 
   return (
-    <aside className="w-80 md:w-[26rem] border-l bg-background/95 backdrop-blur-xl flex flex-col h-full z-20 transition-all duration-300 animate-in slide-in-from-right">
+    <aside className="w-80 xl:w-[26rem] border-l bg-background/95 backdrop-blur-xl flex flex-col h-full z-20 transition-all duration-300 animate-in slide-in-from-right">
       <div className="p-3 border-b flex items-center justify-between bg-muted/40">
         <div className="flex items-center gap-2 font-bold text-xs">
           <Bot className="w-4 h-4 text-indigo-500" />
@@ -378,15 +468,13 @@ export function ChatPanel({
                   </Button>
                 )}
 
-                {!isUser && msg.mermaidCode && (
-                  <details className="rounded-lg border bg-muted/30 text-left overflow-hidden">
-                    <summary className="cursor-pointer px-2 py-1.5 text-[10px] font-medium text-muted-foreground flex items-center gap-1.5">
-                      <Braces className="w-3 h-3 text-indigo-500" /> Mermaid source
-                    </summary>
-                    <pre className="border-t px-2 py-2 overflow-x-auto text-[10px] leading-relaxed text-foreground bg-background whitespace-pre-wrap">
-                      {msg.mermaidCode}
-                    </pre>
-                  </details>
+                {!isUser && msg.mermaidCode && msg.diagramId && (
+                  <MermaidSourceEditor
+                    source={msg.mermaidCode}
+                    diagramId={msg.diagramId}
+                    messageId={msg.id}
+                    onRender={onRenderMermaid}
+                  />
                 )}
               </div>
             </div>
@@ -420,7 +508,7 @@ export function ChatPanel({
               <span className="font-medium text-foreground">Teaching on the canvas…</span>
             </div>
             <div className="text-[11px] text-indigo-600 dark:text-indigo-400 pl-6">
-              Drawing clean vector nodes & callouts in free space (append-only)
+              Auto-layouting structured diagrams; drawing math annotations in free space
             </div>
           </div>
         )}

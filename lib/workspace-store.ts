@@ -37,6 +37,8 @@ export interface WorkspacePage {
   noteNodes: CanvasNoteNode[];
   /** Current native canvas scene. `strokes` remains only for legacy freehand data. */
   excalidrawElements?: Record<string, unknown>[];
+  /** Binary assets used by native image elements, including AI-generated SVG icons. */
+  excalidrawFiles?: Record<string, Record<string, unknown>>;
   appState?: Record<string, unknown>;
   messages: ChatMessage[];
 }

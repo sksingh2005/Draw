@@ -71,7 +71,23 @@ export interface AiCanvasElement {
   strokeWidth?: number;
   strokeStyle?: "solid" | "dashed" | "dotted";
   fontSize?: number;
+  /** Semantic icon name rendered by the client as a trusted SVG canvas asset. */
+  icon?: CanvasIconName;
 }
+
+export type CanvasIconName =
+  | "client"
+  | "gateway"
+  | "identity"
+  | "catalog"
+  | "recommendation"
+  | "playback"
+  | "database"
+  | "cache"
+  | "event"
+  | "cdn"
+  | "origin"
+  | "shield";
 
 export interface MathAnalysisResult {
   id: string;
@@ -246,7 +262,18 @@ export function normalizeCanvasDrawing(
     strokeWidth: elem?.strokeWidth != null ? Number(elem.strokeWidth) : undefined,
     strokeStyle: elem?.strokeStyle || undefined,
     fontSize: elem?.fontSize != null ? Number(elem.fontSize) : undefined,
+    icon: parseCanvasIcon(elem?.icon),
   };
+}
+
+function parseCanvasIcon(value: unknown): CanvasIconName | undefined {
+  const valid: CanvasIconName[] = [
+    "client", "gateway", "identity", "catalog", "recommendation", "playback",
+    "database", "cache", "event", "cdn", "origin", "shield",
+  ];
+  return typeof value === "string" && valid.includes(value as CanvasIconName)
+    ? value as CanvasIconName
+    : undefined;
 }
 
 function cleanLatex(latexStr: string): string {
