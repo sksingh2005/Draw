@@ -35,11 +35,13 @@ import { streamAnalyze } from "@/lib/analyze-client";
 import {
   aiElementToExcalidraw,
   aiIconToExcalidraw,
+  aiSvgToExcalidraw,
   animatePencilElement,
   appendToScene,
 } from "@/lib/excalidraw-elements";
 import { polishCanvasDrawings } from "@/lib/drawing-polish";
 import { mermaidToCanvas, resultUsesMermaidCanvas } from "@/lib/mermaid-canvas";
+import { compileCanvasPlan } from "@/lib/canvas-plan";
 import {
   buildLayoutMap,
   resolveNonOverlappingDrawings,
@@ -307,20 +309,31 @@ export default function Home() {
           promptText: drawingPromptRef.current,
         });
         const safe = deconflictDrawing(polished);
-        let built = aiElementToExcalidraw(safe, index, {
+        const buildMeta = {
           sessionId: aiSessionRef.current,
           role: "explanation",
           diagramId: activeDiagramIdRef.current,
-        });
-        const iconAsset = aiIconToExcalidraw(safe, built, index, {
-          sessionId: aiSessionRef.current,
-          role: "explanation",
-          diagramId: activeDiagramIdRef.current,
-        });
-        if (iconAsset) {
-          excalidrawAPI.addFiles?.([iconAsset.file]);
-          built = [...built, iconAsset.element];
+        };
+        const svgAsset = aiSvgToExcalidraw(safe, index, buildMeta);
+        let built = svgAsset
+          ? [svgAsset.element]
+          : aiElementToExcalidraw(
+              safe.type === "svg"
+                ? { ...safe, type: "rectangle", text: safe.svgAlt || "Vector illustration" }
+                : safe,
+              index,
+              buildMeta
+            );
+        const iconAsset = svgAsset ? null : aiIconToExcalidraw(safe, built, index, buildMeta);
+        const assetFiles = [svgAsset?.file, iconAsset?.file].filter(Boolean) as Record<string, unknown>[];
+        if (assetFiles.length) {
+          excalidrawAPI.addFiles?.(assetFiles);
+          setExcalidrawFiles((current) => ({
+            ...current,
+            ...Object.fromEntries(assetFiles.map((file) => [String(file.id), file])),
+          }));
         }
+        if (iconAsset) built = [...built, iconAsset.element];
         const freehand = built.length === 1 && built[0].type === "freedraw";
         if (freehand) {
           const scene = await animatePencilElement(excalidrawAPI, built[0], {
@@ -358,20 +371,31 @@ export default function Home() {
         const stamped = drawings;
         for (let i = 0; i < stamped.length; i++) {
           setDrawStatus(`Building visual step ${i + 1}…`);
-          let built = aiElementToExcalidraw(stamped[i], i, {
+          const buildMeta = {
             sessionId: aiSessionRef.current,
             role: "explanation",
             diagramId: activeDiagramIdRef.current,
-          });
-          const iconAsset = aiIconToExcalidraw(stamped[i], built, i, {
-            sessionId: aiSessionRef.current,
-            role: "explanation",
-            diagramId: activeDiagramIdRef.current,
-          });
-          if (iconAsset) {
-            excalidrawAPI.addFiles?.([iconAsset.file]);
-            built = [...built, iconAsset.element];
+          };
+          const svgAsset = aiSvgToExcalidraw(stamped[i], i, buildMeta);
+          let built = svgAsset
+            ? [svgAsset.element]
+            : aiElementToExcalidraw(
+                stamped[i].type === "svg"
+                  ? { ...stamped[i], type: "rectangle", text: stamped[i].svgAlt || "Vector illustration" }
+                  : stamped[i],
+                i,
+                buildMeta
+              );
+          const iconAsset = svgAsset ? null : aiIconToExcalidraw(stamped[i], built, i, buildMeta);
+          const assetFiles = [svgAsset?.file, iconAsset?.file].filter(Boolean) as Record<string, unknown>[];
+          if (assetFiles.length) {
+            excalidrawAPI.addFiles?.(assetFiles);
+            setExcalidrawFiles((current) => ({
+              ...current,
+              ...Object.fromEntries(assetFiles.map((file) => [String(file.id), file])),
+            }));
           }
+          if (iconAsset) built = [...built, iconAsset.element];
           const freehand = built.length === 1 && built[0].type === "freedraw";
           if (freehand) {
             const scene = await animatePencilElement(excalidrawAPI, built[0], {
@@ -534,7 +558,7 @@ export default function Home() {
     const selBounds = selectionBoundsFromElements(selection);
     const coordinates = selBounds || layout.suggestedPlacement;
     let streamedDrawCount = 0;
-    let renderedMermaid = false;
+    let renderedStructured = false;
 
     try {
       const result = await streamAnalyze({
@@ -564,10 +588,34 @@ export default function Home() {
             streamedDrawCount++;
             await enqueueLiveDraw(event.element, event.index);
           } else if (event.type === "result") {
-            if (resultUsesMermaidCanvas(event.data) && event.data.mermaidCode) {
+            if (event.data.canvasPlan) {
+              try {
+                const compiled = compileCanvasPlan(
+                  event.data.canvasPlan,
+                  layout.suggestedPlacement
+                );
+                if (compiled.kind === "mermaid") {
+                  await insertMermaidOnCanvas(compiled.source, diagramId);
+                } else {
+                  await insertAiExplanationOnCanvas({
+                    ...event.data,
+                    canvasDrawings: compiled.drawings,
+                  });
+                }
+                renderedStructured = true;
+              } catch (error) {
+                console.warn("CanvasPlan compilation failed; using legacy fallback:", error);
+                setDrawStatus("Plan layout failed; drawing safe fallback…");
+              }
+            }
+            if (
+              !renderedStructured &&
+              resultUsesMermaidCanvas(event.data) &&
+              event.data.mermaidCode
+            ) {
               try {
                 await insertMermaidOnCanvas(event.data.mermaidCode, diagramId);
-                renderedMermaid = true;
+                renderedStructured = true;
               } catch (error) {
                 console.warn("Mermaid auto-layout failed; using primitive fallback:", error);
                 setDrawStatus("Auto-layout failed; drawing safe fallback…");
@@ -599,7 +647,11 @@ export default function Home() {
 
       await drawQueueRef.current;
 
-      if (result && streamedDrawCount === 0 && !renderedMermaid) {
+      if (
+        result &&
+        streamedDrawCount === 0 &&
+        !renderedStructured
+      ) {
         await insertAiExplanationOnCanvas(result);
       }
     } catch (err: any) {
@@ -690,7 +742,17 @@ export default function Home() {
     );
     excalidrawAPI.updateScene({ appState: { selectedElementIds } });
     setSelectedElements(matching);
-    excalidrawAPI.scrollToContent?.(matching, { fitToContent: true });
+    setIsChatOpen(false);
+    window.setTimeout(() => {
+      excalidrawAPI.scrollToContent?.(matching, {
+        fitToContent: true,
+        viewportZoomFactor: 0.82,
+        minZoom: 0.2,
+        maxZoom: 1.2,
+        animate: true,
+        duration: 360,
+      });
+    }, 280);
   };
 
   const handleRenderMermaid = async (source: string, diagramId: string, messageId: string) => {

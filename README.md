@@ -1,5 +1,26 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## AI drawing pipeline
+
+AI responses use a coordinate-free `CanvasPlan` intermediate representation:
+
+```text
+natural language / canvas image
+  -> strict structured response
+  -> CanvasPlan validation
+  -> deterministic graph or lesson compiler
+  -> native Excalidraw elements
+```
+
+Graph plans are compiled to validated Mermaid and then converted into editable
+Excalidraw nodes with routed connectors. Equation and concept plans are compiled
+into measured lesson blocks. Legacy `mermaidCode` and `canvasDrawings` responses
+remain supported as fallbacks.
+
+The contract and compiler live in `lib/canvas-plan.ts`; the Responses API schema
+lives in `lib/analysis-response-schema.ts`. Add semantic primitives there instead
+of teaching the model to calculate pixel coordinates.
+
 ## Getting Started
 
 First, run the development server:

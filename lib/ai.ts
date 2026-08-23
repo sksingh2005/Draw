@@ -7,6 +7,8 @@ import {
 } from "./math-parser";
 import { extractNewCanvasDrawings } from "./excalidraw-elements";
 import { resultUsesMermaidCanvas } from "./mermaid-canvas";
+import { ANALYSIS_RESPONSE_SCHEMA } from "./analysis-response-schema";
+import { resultUsesCanvasPlan } from "./canvas-plan";
 import {
   WHITEBOARD_SYSTEM_PROMPT,
   buildWhiteboardUserPrompt,
@@ -93,7 +95,15 @@ function responseOptions(params: AnalyzeParams) {
     model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
     instructions: WHITEBOARD_SYSTEM_PROMPT,
     input: buildInput(params),
-    text: { format: { type: "json_object" as const } },
+    text: {
+      format: {
+        type: "json_schema" as const,
+        name: "canvas_analysis",
+        description: "A semantic canvas plan plus concise teaching metadata.",
+        strict: true,
+        schema: ANALYSIS_RESPONSE_SCHEMA,
+      },
+    },
   };
 }
 
@@ -153,13 +163,13 @@ export async function* streamAnalyzeCanvasContent(
       accumulated,
       emittedDrawCount
     );
-    const structuredDiagram = /"classification"\s*:\s*"(?:architecture|schema|flowchart)"/i.test(
-      accumulated
-    );
+    const structuredDiagram =
+      /"canvasPlan"\s*:\s*\{/i.test(accumulated) ||
+      /"classification"\s*:\s*"(?:architecture|schema|flowchart)"/i.test(accumulated);
 
-    // Structured diagrams are laid out from their Mermaid source after the
-    // response completes. Keep primitive drawings as a fallback, but do not
-    // paint them early and then duplicate the same graph on the canvas.
+    // Semantic plans and legacy Mermaid diagrams are compiled after the full
+    // response arrives. Do not paint coordinate primitives early and then
+    // duplicate the compiled result on the canvas.
     if (structuredDiagram) continue;
 
     if (items.length > 0 && !drawingPhase) {
@@ -184,7 +194,7 @@ export async function* streamAnalyzeCanvasContent(
   yield { type: "status", message: "Finalizing explanation…" };
   const result = parseResult(accumulated, params);
   const finalDrawings = result.canvasDrawings || [];
-  if (!resultUsesMermaidCanvas(result)) {
+  if (!resultUsesMermaidCanvas(result) && !resultUsesCanvasPlan(result)) {
     for (let i = emittedDrawCount; i < finalDrawings.length; i++) {
       yield { type: "draw", element: finalDrawings[i], index: i };
     }

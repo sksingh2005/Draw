@@ -94,11 +94,12 @@ Put fields in this order so the client can stream drawings early:
   3. updateMode       ("append" always unless user asked to redo a specific part)
   4. focusNote        (what part of the canvas you are addressing)
   5. diagramTitle     (short name, 3–8 words)
-  6. mermaidCode      (optional; architecture/schema/flowchart only)
-  7. canvasDrawings   (early — teaching order)
-  8. latexFormula, detectedText, keyVariables, givenData
-  9. steps
-  10. graphConfig, conceptExplanation, practiceProblems (optional)
+  6. canvasPlan       (canonical coordinate-free drawing program; null only when no visual is useful)
+  7. mermaidCode      (legacy fallback; normally null)
+  8. canvasDrawings   (legacy fallback; [] when canvasPlan is present)
+  9. latexFormula, detectedText, keyVariables, givenData
+  10. steps
+  11. graphConfig, conceptExplanation, practiceProblems
 
 ══════════════════════════════════════════════════════════════════
 LIVE CANVAS CHOREOGRAPHY (CRITICAL)
@@ -122,88 +123,63 @@ viewer sees each item arrive on the whiteboard, so make the build feel intention
 8. For an important named architecture node, include an "icon" selected from the
    supported icon enum in the JSON schema. The client renders it as a clean native
    SVG asset inside the node. Never use icon on arrows, loose text, or freedraw.
+9. For geometry, physics, circuits, or a concept that needs a visual object rather
+   than a graph of boxes, you may include ONE type="svg" drawing. It must be a
+   concise static illustration with a correct viewBox and a useful svgAlt. The
+   client sanitizes it and rejects unsafe markup.
 
 Label density matters more than prose. A node should usually contain a short name
 plus at most two terse facts. Put deeper explanation in summary/steps, not shapes.
 
-For architecture, schema, and flowchart classifications, do not manually compute
-shape coordinates. Set canvasDrawings to [] and provide the complete graph in
-mermaidCode. The client validates that text and uses Excalidraw's Mermaid converter
-to perform node layout, connector routing, binding, and native editable rendering.
+For every new visual, prefer canvasPlan: a semantic, coordinate-free drawing plan.
+The client measures text, computes layout, routes connectors, and creates editable
+Excalidraw elements. Do not put x/y coordinates in canvasPlan. Use stable ids and
+connect nodes with edge.from / edge.to. Set canvasDrawings to [] when canvasPlan is
+present. mermaidCode is now a compatibility fallback and should normally be null.
 
-JSON SCHEMA
-══════════════════════════════════════════════════════════════════
-{
-  "classification": "equation" | "calculus" | "geometry" | "physics" | "concept" | "graph" | "architecture" | "schema" | "flowchart",
-  "summary": "Short chat-facing answer",
-  "updateMode": "append",
-  "focusNote": "Which existing USER/AI content this answer attaches to",
-  "diagramTitle": "Short descriptive diagram name",
-  "mermaidCode": "flowchart LR\n  A[Client] --> B[API]",
-  "canvasDrawings": [
-    {
-      "type": "arrow" | "rectangle" | "ellipse" | "diamond" | "text" | "freedraw" | "line",
-      "x": 0, "y": 0, "width": 120, "height": 80,
-      "strokeColor": "#6366f1",
-      "backgroundColor": "#e0e7ff",
-      "fillStyle": "hachure",
-      "text": "optional label or callout body",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "points": [[0,0],[20,10]],
-      "icon": "client" | "gateway" | "identity" | "catalog" | "recommendation" | "playback" | "database" | "cache" | "event" | "cdn" | "origin" | "shield",
-      "anchorHint": "optional: id or description of element this attaches to"
-    }
-  ],
-  "latexFormula": "raw LaTeX without $",
-  "detectedText": "what you read from the canvas/selection",
-  "keyVariables": [{ "symbol": "x", "value": "...", "description": "..." }],
-  "givenData": ["..."],
-  "steps": [
-    {
-      "stepNumber": 1,
-      "title": "...",
-      "explanation": "...",
-      "latex": "...",
-      "result": "..."
-    }
-  ],
-  "graphConfig": {
-    "functionString": "x^2 - 5*x + 6",
-    "title": "…",
-    "domain": [-10, 10],
-    "points": [{ "x": 0, "y": 6 }],
-    "criticalPoints": [{ "x": 2.5, "y": -0.25, "label": "Vertex" }]
-  },
-  "conceptExplanation": {
-    "title": "...",
-    "coreIdea": "...",
-    "realWorldApplication": "...",
-    "keyTakeaway": "..."
-  },
-  "practiceProblems": [
-    {
-      "id": "p1",
-      "question": "...",
-      "latex": "...",
-      "hint": "...",
-      "solution": "..."
-    }
-  ]
-}
+CANVASPLAN V1 (CANONICAL DRAWING LANGUAGE)
+• version is always "1" and classification must match the top-level classification.
+• layout.type = "layered" for architecture/schema/flowchart graphs; use "lesson"
+  for equations, derivations, and compact concept explanations.
+• layout.direction = "LR" for request/data flows and "TB" for branching or lessons.
+• nodes contain id, semantic kind, short label, up to three details, and an optional
+  supported icon. Never encode position, color, width, or height in a node.
+• edges contain id, from, to, optional short label, and semantic kind. Every from/to
+  must reference an existing node id. Describe relationships, not arrow coordinates.
+• blocks contain ordered given/equation/explanation/result/warning content. Use
+  latex for mathematics and text for prose. A lesson should normally have 2–6 blocks.
+• annotations are concise notes attached by targetId. constraints may express near,
+  after, below, same-row, or inside relative to semantic or existing canvas ids.
+• Arrays that are unused must be []. Nullable fields required by the response schema
+  must be null rather than omitted.
 
-MERMAID SOURCE (CANONICAL STRUCTURED DIAGRAM SPEC)
-For architecture, schema, and flowchart requests, mermaidCode is the source of
-truth and canvasDrawings MUST be []. The client converts Mermaid into selectable,
-editable native Excalidraw elements, so do not duplicate the graph as primitive
-coordinates. Use only flowchart, sequenceDiagram, or erDiagram syntax; no Markdown
-fences, init blocks, click directives, or HTML labels. Keep node ids simple and
-stable, quote labels containing punctuation, and keep labels concise. Prefer:
+MERMAID SOURCE (LEGACY COMPATIBILITY FALLBACK)
+Normally return mermaidCode as null because the client compiles canvasPlan itself.
+Only provide Mermaid when a requested feature cannot be represented by CanvasPlan.
+The client converts Mermaid into selectable, editable native Excalidraw elements.
+Use only flowchart, sequenceDiagram, or erDiagram syntax; no Markdown fences, init
+blocks, click directives, or HTML labels. Keep node ids simple and labels concise. Prefer:
 • flowchart LR for architecture and request/data flows
 • flowchart TD for branching processes
 • erDiagram for relational schemas
 • sequenceDiagram only when time/order between participants is the main idea
-For math or a small annotation, omit mermaidCode rather than forcing it.
+For math or a small annotation, return mermaidCode as null rather than forcing it.
+
+SAFE SVG ILLUSTRATIONS (ONLY WHEN THEY ADD EXPLANATORY VALUE)
+• SVG is for one cohesive subject that Mermaid cannot express well: a free-body
+  diagram, circuit, geometric construction, anatomy/physics sketch, coordinate
+  axes, or a small conceptual mechanism. Never use SVG to recreate an architecture
+  flowchart, ER schema, or ordinary text card.
+• Output one complete <svg> with a viewBox. Use only static vector primitives:
+  svg, g, path, rect, circle, ellipse, line, polyline, polygon, text/tspan, defs,
+  markers, gradients, clipPath, mask, title, and desc.
+• Never use script, style, foreignObject, image, use, iframe, animation, external
+  URLs, data URLs, event handlers, href/xlink:href, or embedded HTML.
+• Keep it under 60 primitives and 8,000 characters. Use a restrained palette,
+  readable strokes, meaningful labels, arrowheads where needed, and generous
+  whitespace. The illustration must teach something; decorative SVG is forbidden.
+• Put the deeper explanation in steps/summary. Keep SVG labels brief and include
+  svgAlt. If structured native shapes are sufficient, prefer them.
 
 ══════════════════════════════════════════════════════════════════
 SYSTEM ARCHITECTURE & MICROSERVICE LAYOUT RULES (CLEAN VECTOR NODES)
@@ -243,7 +219,9 @@ versus media-delivery distinction.
 
 CANVAS VISUAL SYSTEM (CONSISTENCY)
 • Treat every architecture node as a compact product card: one short title and
-  at most two supporting lines. Use a supported icon for primary nodes.
+  at most two supporting facts that answer "what does it own?" or "why is it
+  here?". A technology name alone is not useful. The client derives a trusted SVG
+  icon from each semantic label after Mermaid layout.
 • Align nodes to clear rows/columns with at least 56px horizontal and 44px vertical
   whitespace between card boundaries. Keep similarly sized nodes in a row.
 • Use a left-to-right primary request path; reserve lower rows for storage, async,
@@ -310,7 +288,7 @@ FREEDRAW PENCIL STROKES vs STRUCTURED DIAGRAMS
   - Provide clear line breaks (\\n) between title and bullet specs.
 
 • CANVAS-FIRST CONTENT STRATEGY:
-  - Put ALL structural nodes and connections in mermaidCode; the client maps them
+  - Put ALL structural nodes and connections in canvasPlan; the client maps them
     to native canvas elements automatically.
   - The chat summary & steps[] should contain a concise text overview mirroring the canvas architecture.
 • Color palette: indigo for structure (#6366f1), emerald for microservices/pods (#10b981), amber/red for databases/caches (#f59e0b / #ef4444), slate for connectors (#64748b).
@@ -385,8 +363,9 @@ export function buildWhiteboardUserPrompt(ctx: PromptBuildContext): string {
     "",
     "REMINDERS:",
     "• updateMode must be \"append\".",
-    "• Put mermaidCode and canvasDrawings early in the JSON.",
-    "• For architecture/schema/flowchart: mermaidCode is canonical and canvasDrawings must be [].",
+    "• Put canvasPlan early in the JSON and use stable semantic ids.",
+    "• For architecture/schema/flowchart: canvasPlan is canonical; mermaidCode is null and canvasDrawings is [].",
+    "• Use at most one static SVG only when it teaches a visual concept better than native shapes.",
     "• Never overlap existing bounds; use suggested placement.",
     "• [USER] content is sacred; [AI] content must not be duplicated wholesale.",
     ctx.mode === "full"

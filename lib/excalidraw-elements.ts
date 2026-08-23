@@ -5,6 +5,7 @@
 
 import type { AiCanvasElement, CanvasIconName } from "./math-parser";
 import { stampAiProvenance } from "./canvas-provenance";
+import { sanitizeGeneratedSvg, svgMarkupToDataUrl } from "./svg-sanitizer";
 
 export type ExcalidrawElement = Record<string, unknown>;
 
@@ -21,7 +22,7 @@ export interface AiBuildOptions {
   diagramId?: string;
 }
 
-export interface AiCanvasIconAsset {
+export interface AiCanvasImageAsset {
   element: ExcalidrawElement;
   file: {
     id: string;
@@ -81,6 +82,10 @@ export function aiElementToExcalidraw(
   // Cleaner look for system diagrams; slightly sketchy for freehand math
   const roughness = item.type === "freedraw" ? 1 : 0;
   const elements: ExcalidrawElement[] = [];
+
+  // SVG drawings are represented as native image elements with a separately
+  // registered BinaryFileData payload (see aiSvgToExcalidraw).
+  if (item.type === "svg") return elements;
 
   if (item.type === "freedraw" && item.points && item.points.length > 0) {
     const pts = item.points.map((p) => [p[0], p[1]] as [number, number]);
@@ -291,9 +296,18 @@ const ICON_PATHS: Record<CanvasIconName, string> = {
   cdn: '<path d="M20 47h28a11 11 0 0 0 0-22 16 16 0 0 0-30-4A11 11 0 0 0 20 47z"/>',
   origin: '<path d="M32 12c10 10 15 18 15 27a15 15 0 1 1-30 0c0-9 5-17 15-27z"/><path d="M32 31c3 3 5 6 5 10a5 5 0 0 1-10 0c0-4 2-7 5-10z"/>',
   shield: '<path d="M32 11 49 18v13c0 11-7 19-17 23-10-4-17-12-17-23V18z"/><path d="m24 32 5 5 11-12"/>',
+  api: '<path d="M13 18h38v28H13zM13 26h38"/><circle cx="19" cy="22" r="1" fill="currentColor"/><path d="m22 37 6-5 5 4 9-8"/>',
+  service: '<rect x="12" y="14" width="40" height="36" rx="5"/><path d="M21 25h22M21 33h22M21 41h14"/>',
+  "load-balancer": '<path d="M12 20h13v12H12zM39 20h13v12H39zM25 40h14v12H25zM32 13v7M18 32v4h28v-4M32 36v4"/>',
+  queue: '<path d="M12 17h40v30H12zM20 25h24M20 32h24M20 39h16"/><path d="m46 38 6 5-6 5"/>',
+  worker: '<circle cx="32" cy="32" r="9"/><path d="M32 13v6M32 45v6M13 32h6M45 32h6M19 19l4 4M41 41l4 4M45 19l-4 4M23 41l-4 4"/>',
+  notification: '<path d="M19 42h26l-4-6V27a9 9 0 0 0-18 0v9zM28 48a5 5 0 0 0 8 0"/>',
+  analytics: '<path d="M14 50V29h9v21M28 50V19h9v31M42 50V11h9v39M11 50h44"/>',
+  search: '<circle cx="28" cy="28" r="14"/><path d="m39 39 12 12"/>',
+  storage: '<path d="M14 18h36v34H14zM20 12h24v6M22 27h20M22 36h20M22 45h12"/>',
 };
 
-function svgDataUrl(icon: CanvasIconName, color: string): string {
+export function canvasIconDataUrl(icon: CanvasIconName, color: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[icon]}</svg>`;
   // Excalidraw's file loader decodes image payloads with atob(), so use a
   // base64 data URL rather than a percent-encoded SVG URL.
@@ -309,7 +323,7 @@ export function aiIconToExcalidraw(
   built: readonly ExcalidrawElement[],
   index = 0,
   opts: AiBuildOptions = {}
-): AiCanvasIconAsset | null {
+): AiCanvasImageAsset | null {
   if (!item.icon) return null;
   const container = built.find((element) =>
     ["rectangle", "ellipse", "diamond"].includes(String(element.type))
@@ -327,7 +341,7 @@ export function aiIconToExcalidraw(
     file: {
       id: fileId,
       mimeType: "image/svg+xml",
-      dataURL: svgDataUrl(item.icon, color),
+      dataURL: canvasIconDataUrl(item.icon, color),
       created: Date.now(),
     },
     element: baseProps(
@@ -350,6 +364,82 @@ export function aiIconToExcalidraw(
       { ...opts, index }
     ),
   };
+}
+
+export function inferCanvasIcon(text: string): CanvasIconName | undefined {
+  const normalized = text.toLowerCase();
+  const rules: Array<[RegExp, CanvasIconName]> = [
+    [/\b(?:client|browser|mobile|device|frontend|web app)\b/, "client"],
+    [/\b(?:load balancer|ingress|reverse proxy)\b/, "load-balancer"],
+    [/\b(?:gateway|edge entry)\b/, "gateway"],
+    [/\b(?:api|endpoint|rest|graphql)\b/, "api"],
+    [/\b(?:auth|identity|oauth|session)\b/, "identity"],
+    [/\b(?:recommend|ranking|personalization)\b/, "recommendation"],
+    [/\b(?:playback|stream player|drm)\b/, "playback"],
+    [/\b(?:catalog|metadata)\b/, "catalog"],
+    [/\b(?:redis|cache)\b/, "cache"],
+    [/\b(?:kafka|rabbitmq|queue|broker|event bus|pubsub)\b/, "queue"],
+    [/\b(?:worker|consumer|job|processor)\b/, "worker"],
+    [/\b(?:notification|email|push|sms)\b/, "notification"],
+    [/\b(?:analytics|telemetry|metrics|observability)\b/, "analytics"],
+    [/\b(?:search|index|elasticsearch|opensearch)\b/, "search"],
+    [/\b(?:cdn|edge delivery)\b/, "cdn"],
+    [/\b(?:origin|transcod|media store)\b/, "origin"],
+    [/\b(?:database|postgres|mysql|mongo|dynamo|sql|data store)\b/, "database"],
+    [/\b(?:object storage|blob|bucket|archive)\b/, "storage"],
+    [/\b(?:shield|security|firewall|waf)\b/, "shield"],
+    [/\b(?:service|microservice)\b/, "service"],
+  ];
+  return rules.find(([pattern]) => pattern.test(normalized))?.[1];
+}
+
+/** Convert a strictly sanitized, static LLM-authored SVG into one canvas image. */
+export function aiSvgToExcalidraw(
+  item: AiCanvasElement,
+  index = 0,
+  opts: AiBuildOptions = {}
+): AiCanvasImageAsset | null {
+  if (item.type !== "svg" || !item.svgMarkup) return null;
+  try {
+    const sanitized = sanitizeGeneratedSvg(item.svgMarkup);
+    const fileId = randId(`ai-svg-${index}`);
+    const ratio = sanitized.viewBox[2] / sanitized.viewBox[3];
+    const requestedWidth = Math.max(120, Math.min(720, Number(item.width) || 360));
+    const requestedHeight = Math.max(90, Math.min(560, Number(item.height) || requestedWidth / ratio));
+    const width = Math.min(requestedWidth, requestedHeight * ratio);
+    const height = width / ratio;
+
+    return {
+      file: {
+        id: fileId,
+        mimeType: "image/svg+xml",
+        dataURL: svgMarkupToDataUrl(sanitized.markup),
+        created: Date.now(),
+      },
+      element: baseProps(
+        {
+          id: randId(`ai-svg-element-${index}`),
+          type: "image",
+          x: item.x,
+          y: item.y,
+          width,
+          height,
+          fileId,
+          status: "saved",
+          scale: [1, 1],
+          crop: null,
+          strokeColor: "transparent",
+          backgroundColor: "transparent",
+          boundElements: null,
+          customData: { svgAlt: item.svgAlt || item.text || "AI vector illustration" },
+        },
+        { ...opts, index, role: "svg-illustration" }
+      ),
+    };
+  } catch (error) {
+    console.warn("Rejected unsafe or invalid AI SVG:", error);
+    return null;
+  }
 }
 
 /** Word-wrap long single lines into ~maxCharsPerLine columns */
@@ -704,7 +794,7 @@ function normalizeDrawing(elem: Record<string, unknown>): AiCanvasElement {
     : undefined;
 
   const rawText = elem.text ? String(elem.text) : elem.label ? String(elem.label) : undefined;
-  const shapeKind = ["rectangle", "ellipse", "arrow", "text", "diamond", "freedraw", "line"].includes(type)
+  const shapeKind = ["rectangle", "ellipse", "arrow", "text", "diamond", "freedraw", "line", "svg"].includes(type)
     ? type
     : "rectangle";
 
@@ -727,12 +817,20 @@ function normalizeDrawing(elem: Record<string, unknown>): AiCanvasElement {
     strokeStyle: elem.strokeStyle as AiCanvasElement["strokeStyle"],
     fontSize: elem.fontSize ? Number(elem.fontSize) : undefined,
     icon: isCanvasIcon(elem.icon) ? elem.icon : undefined,
+    svgMarkup: shapeKind === "svg" && typeof elem.svgMarkup === "string"
+      ? elem.svgMarkup.slice(0, 12_000)
+      : undefined,
+    svgAlt: shapeKind === "svg" && typeof elem.svgAlt === "string"
+      ? elem.svgAlt.slice(0, 180)
+      : undefined,
   };
 }
 
 function isCanvasIcon(value: unknown): value is CanvasIconName {
   return typeof value === "string" && [
     "client", "gateway", "identity", "catalog", "recommendation", "playback",
-    "database", "cache", "event", "cdn", "origin", "shield",
+    "database", "cache", "event", "cdn", "origin", "shield", "api",
+    "service", "load-balancer", "queue", "worker", "notification",
+    "analytics", "search", "storage",
   ].includes(value);
 }

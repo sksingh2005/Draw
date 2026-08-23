@@ -1,4 +1,5 @@
 import { sanitizeMathLatex } from "@/lib/utils";
+import { parseCanvasPlan, type CanvasPlan } from "@/lib/canvas-plan";
 
 export interface CanvasCoordinates {
   x: number;
@@ -56,7 +57,7 @@ export interface PracticeProblem {
 }
 
 export interface AiCanvasElement {
-  type: "rectangle" | "ellipse" | "arrow" | "text" | "diamond" | "freedraw" | "line";
+  type: "rectangle" | "ellipse" | "arrow" | "text" | "diamond" | "freedraw" | "line" | "svg";
   x: number;
   y: number;
   width: number;
@@ -73,6 +74,12 @@ export interface AiCanvasElement {
   fontSize?: number;
   /** Semantic icon name rendered by the client as a trusted SVG canvas asset. */
   icon?: CanvasIconName;
+  /** Optional static SVG illustration. Sanitized client-side before rendering. */
+  svgMarkup?: string;
+  /** Accessible description retained in the image element metadata. */
+  svgAlt?: string;
+  /** Existing canvas element id or semantic description this item relates to. */
+  anchorHint?: string;
 }
 
 export type CanvasIconName =
@@ -87,7 +94,16 @@ export type CanvasIconName =
   | "event"
   | "cdn"
   | "origin"
-  | "shield";
+  | "shield"
+  | "api"
+  | "service"
+  | "load-balancer"
+  | "queue"
+  | "worker"
+  | "notification"
+  | "analytics"
+  | "search"
+  | "storage";
 
 export interface MathAnalysisResult {
   id: string;
@@ -106,6 +122,8 @@ export interface MathAnalysisResult {
   diagramTitle?: string;
   /** Optional Mermaid source for portable flowchart/schema/architecture diagrams. */
   mermaidCode?: string;
+  /** Coordinate-free drawing program compiled deterministically by the client. */
+  canvasPlan?: CanvasPlan;
   keyVariables: KeyVariable[];
   givenData: string[];
   steps: SolutionStep[];
@@ -149,6 +167,7 @@ export function parseMathAnalysisResponse(
       focusNote: parsed.focusNote || undefined,
       diagramId: diagram?.id,
       diagramTitle: parsed.diagramTitle || diagram?.title || parsed.summary?.slice(0, 72) || "Canvas diagram",
+      canvasPlan: parseCanvasPlan(parsed.canvasPlan),
       mermaidCode: sanitizeMermaidCode(parsed.mermaidCode),
       keyVariables: Array.isArray(parsed.keyVariables)
         ? parsed.keyVariables.map((v: any) => ({
@@ -227,6 +246,7 @@ const VALID_DRAW_TYPES = new Set([
   "diamond",
   "freedraw",
   "line",
+  "svg",
 ]);
 
 export function normalizeCanvasDrawing(
@@ -247,12 +267,17 @@ export function normalizeCanvasDrawing(
         .filter(Boolean) as [number, number][]
     : undefined;
 
+  const finiteOr = (value: unknown, fallback: number): number => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
+
   return {
     type,
-    x: Number(elem?.x) || coordinates.x + 350,
-    y: Number(elem?.y) || coordinates.y,
-    width: Number(elem?.width) || 280,
-    height: Number(elem?.height) || 140,
+    x: finiteOr(elem?.x, coordinates.x + 350),
+    y: finiteOr(elem?.y, coordinates.y),
+    width: Math.max(1, finiteOr(elem?.width, 280)),
+    height: Math.max(1, finiteOr(elem?.height, 140)),
     strokeColor: elem?.strokeColor || "#6366f1",
     backgroundColor: elem?.backgroundColor || "transparent",
     fillStyle: elem?.fillStyle || "solid",
@@ -263,13 +288,24 @@ export function normalizeCanvasDrawing(
     strokeStyle: elem?.strokeStyle || undefined,
     fontSize: elem?.fontSize != null ? Number(elem.fontSize) : undefined,
     icon: parseCanvasIcon(elem?.icon),
+    svgMarkup: type === "svg" && typeof elem?.svgMarkup === "string"
+      ? elem.svgMarkup.slice(0, 12_000)
+      : undefined,
+    svgAlt: type === "svg" && typeof elem?.svgAlt === "string"
+      ? elem.svgAlt.slice(0, 180)
+      : undefined,
+    anchorHint: typeof elem?.anchorHint === "string"
+      ? elem.anchorHint.slice(0, 120)
+      : undefined,
   };
 }
 
 function parseCanvasIcon(value: unknown): CanvasIconName | undefined {
   const valid: CanvasIconName[] = [
     "client", "gateway", "identity", "catalog", "recommendation", "playback",
-    "database", "cache", "event", "cdn", "origin", "shield",
+    "database", "cache", "event", "cdn", "origin", "shield", "api",
+    "service", "load-balancer", "queue", "worker", "notification",
+    "analytics", "search", "storage",
   ];
   return typeof value === "string" && valid.includes(value as CanvasIconName)
     ? value as CanvasIconName

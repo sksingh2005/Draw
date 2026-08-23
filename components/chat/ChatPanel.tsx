@@ -32,6 +32,7 @@ import {
   Copy,
   Check,
   RefreshCw,
+  ImageIcon,
 } from "lucide-react";
 
 interface ChatPanelProps {
@@ -134,6 +135,7 @@ function AnalysisCard({ result }: { result: MathAnalysisResult }) {
   const meta = classificationMeta(result.classification);
   const Icon = meta.icon;
   const drawCount = result.canvasDrawings?.length || 0;
+  const hasSvgIllustration = result.canvasDrawings?.some((drawing) => drawing.type === "svg");
 
   return (
     <div className="space-y-2 text-xs">
@@ -160,6 +162,15 @@ function AnalysisCard({ result }: { result: MathAnalysisResult }) {
               >
                 <Braces className="w-3 h-3" />
                 Auto-layout · editable
+              </Badge>
+            )}
+            {hasSvgIllustration && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1 bg-cyan-500/5 text-cyan-700 border-cyan-500/20"
+              >
+                <ImageIcon className="w-3 h-3" />
+                Sanitized vector visual
               </Badge>
             )}
             {result.updateMode && (
